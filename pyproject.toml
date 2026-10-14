@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "precisionpdf-mcp"
+version = "0.1.0"
+description = "Local MCP server for evidence-backed, precise PDF highlights"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+keywords = ["pdf", "mcp", "annotations", "highlighting", "pymupdf"]
+dependencies = [
+  "mcp>=1.12,<2",
+  "PyMuPDF>=1.24,<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+precisionpdf-mcp = "precisionpdf_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/precisionpdf_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
