@@ -234,7 +234,7 @@ class PDFWorkspace:
             for idx in pages:
                 for a in doc[idx].annots() or []:
                     results.append({"page": idx + 1, "xref": a.xref, "type": a.type[1],
-                                    "colors": a.colors, "rect": tuple(a.rect),
+                                    "colors": a.colors, "opacity": a.opacity, "rect": tuple(a.rect),
                                     "content": (a.info or {}).get("content", "")[:250]})
         return {"file": str(path.relative_to(self.root)), "count": len(results), "annotations": results[:500],
                 "truncated": len(results) > 500}

@@ -6,6 +6,7 @@ import os
 
 from mcp.server.fastmcp import FastMCP
 from .core import PDFWorkspace
+from .annotation_edits import AnnotationEditor
 
 mcp = FastMCP("PrecisionPDF-MCP")
 
@@ -62,6 +63,43 @@ def list_annotations(file: str, page: int | None = None) -> dict:
 def render_pdf_page(file: str, page: int = 1) -> dict:
     """Render a PDF page (including annotations) to a local PNG for visual review."""
     return workspace().render(file, page)
+
+
+
+@mcp.tool()
+def propose_annotation_update(file: str, page: int, xref: int, color: str,
+                              opacity: float | None = None) -> dict:
+    """Preview changing ONE existing highlight's color or opacity; no edits.
+
+    Obtain page and xref from list_annotations. Review the proposed edit first.
+    """
+    return AnnotationEditor(workspace()).propose_update(file, page, xref, color, opacity)
+
+
+@mcp.tool()
+def apply_annotation_update(file: str, page: int, xref: int, expected_fingerprint: str,
+                            color: str, opacity: float | None = None) -> dict:
+    """Change ONE existing highlight after explicit user approval.
+
+    Requires a fresh fingerprint and an existing *-annotated.pdf copy.
+    Never use shell commands to delete or reconstruct the PDF.
+    """
+    return AnnotationEditor(workspace()).apply_update(file, page, xref, expected_fingerprint, color, opacity)
+
+
+@mcp.tool()
+def propose_annotation_removal(file: str, page: int, xref: int) -> dict:
+    """Preview removal of ONE existing highlight without modifying the PDF."""
+    return AnnotationEditor(workspace()).propose_removal(file, page, xref)
+
+
+@mcp.tool()
+def apply_annotation_removal(file: str, page: int, xref: int, expected_fingerprint: str) -> dict:
+    """Remove ONE existing highlight after explicit user approval.
+
+    Refuses to edit original PDFs, stale files, and non-highlight annotations.
+    """
+    return AnnotationEditor(workspace()).apply_removal(file, page, xref, expected_fingerprint)
 
 
 def main() -> None:

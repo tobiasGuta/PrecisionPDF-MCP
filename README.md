@@ -6,7 +6,7 @@ A local **MCP server** for reliable PDF highlights using PyMuPDF. Built for a co
 
 ## Features
 
-- Six MCP tools: `list_pdfs`, `read_pdf_page`, `propose_highlight`, `apply_highlight`, `list_annotations`, `render_pdf_page`.
+- Ten MCP tools (six original tools plus four annotation-edit tools): `list_pdfs`, `read_pdf_page`, `propose_highlight`, `apply_highlight`, `list_annotations`, `render_pdf_page`.
 - Match normalized full word sequences with explicit ambiguity rejection.
 - Group word positions by PDF text line to create clean colored highlights.
 - Yellow, blue, green, pink and orange with configurable opacity.
@@ -70,3 +70,15 @@ Replace the source directory with your clone location. Open **MCP: List Servers*
 - Optional live viewer integration after the VS Code PDF.js CSP incompatibility is resolved.
 
 MIT License.
+
+## Edit or remove an existing highlight (feature branch)
+
+Use `list_annotations(file, page)` on an existing `*-annotated.pdf` document to inspect page, `xref`, color, opacity, and stored annotation content. Identify the exact target before editing.
+
+- To **recolor**: call `propose_annotation_update(file, page, xref, color, opacity?)`, review the current annotation and proposed values, then (only after user permission) pass the returned `fingerprint` to `apply_annotation_update(file, page, xref, expected_fingerprint, color, opacity?)`. Omit opacity to preserve the original.
+- To **remove**: call `propose_annotation_removal(file, page, xref)`, review the target, then (only after user permission) call `apply_annotation_removal(file, page, xref, expected_fingerprint)`.
+- Proposals never change the PDF. Each application edits exactly one identified highlight in the existing annotated copy; it does **not** delete the file or rebuild highlights from scratch. It saves to a temporary PDF, verifies other annotations are unchanged, then atomically replaces that working copy.
+- Editing is limited to `*-annotated.pdf` files inside `PRECISIONPDF_ROOT`. Original PDFs, invalid colors, wrong-page or non-highlight xrefs, and stale SHA-256 fingerprints are rejected. Other annotations and their object references are checked after saving.
+- A successful edit changes the PDF fingerprint; run a new proposal before the next edit. Keep backups for important documents, and visually verify changes in Okular.
+
+**Client safety:** MCP tool permission prompts remain the approval mechanism. The server checks the fingerprint and target but cannot independently authenticate a human's approval. Do not grant automatic write permission if you want to review each change. Do not use `rm` or a shell-based rebuild as a workaround for an unsupported edit.
