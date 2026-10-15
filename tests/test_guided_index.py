@@ -77,3 +77,49 @@ def test_exceed_limits_fails_closed(lesson, monkeypatch):
     monkeypatch.setattr(guided_index, "MAX_EXCERPTS", 1)
     with pytest.raises(AnnotationError, match="no partial overview"):
         build_guided_index(str(lesson.parent), lesson.name)
+
+def test_sentence_aware_excerpts_and_exact_rendered_word_ranges(tmp_path):
+    source = tmp_path / "sentences.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((50, 80),
+            "Dr. Smith studies AI. Neural networks may be unreliable. Interpretability matters.")
+        doc.save(source)
+    indexed = build_guided_index(str(tmp_path), source.name)
+    texts = [e["text"] for e in indexed["excerpts"]]
+    assert texts == [
+        "Dr. Smith studies AI.",
+        "Neural networks may be unreliable.",
+        "Interpretability matters.",
+    ]
+    assert all(e["boundary"] == "sentence" for e in indexed["excerpts"])
+    rendered = read_learning_page(str(tmp_path), source.name, 1)
+    for excerpt in indexed["excerpts"]:
+        span = rendered["words"][excerpt["start_word"]:excerpt["end_word"] + 1]
+        assert " ".join(word[4] for word in span) == excerpt["text"]
+
+
+def test_pdf_outline_identifies_separate_readings_without_inventing_boundaries(tmp_path):
+    source = tmp_path / "packet.pdf"
+    with pymupdf.open() as doc:
+        one = doc.new_page()
+        one.insert_text((50, 80), "The first reading explains machine learning.")
+        two = doc.new_page()
+        two.insert_text((50, 80), "The second reading covers the environment.")
+        doc.set_toc([[1, "Reading One", 1], [1, "Reading Two", 2]])
+        doc.save(source)
+    indexed = build_guided_index(str(tmp_path), source.name)
+    assert [s["title"] for s in indexed["sections"]] == ["Reading One", "Reading Two"]
+    assert indexed["excerpts"][0]["section"] == "Reading One"
+    assert indexed["excerpts"][-1]["section"] == "Reading Two"
+    assert source.read_bytes()  # Original file remains readable
+
+
+def test_sentence_fragment_cap_still_covers_every_word(tmp_path):
+    from precisionpdf_mcp.guided_index import _extract_ranges, MAX_EVIDENCE_WORDS
+    words = [(0, 0, 10, 10, f"word{i}", 0, i // 10, i % 10)
+             for i in range(MAX_EVIDENCE_WORDS * 2 + 3)]
+    ranges = list(_extract_ranges(words))
+    assert ranges[0][2] == "fragment"
+    assert ranges[0][1] == MAX_EVIDENCE_WORDS - 1
+    assert [n for start, end, _ in ranges for n in range(start, end + 1)] == list(range(len(words)))

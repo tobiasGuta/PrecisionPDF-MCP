@@ -68,3 +68,48 @@ test("synthesis cannot insert new evidence identifiers", async () => {
     sendModel: async () => ++n === 1 ? '{"findings":[{"evidenceId":"p1-w0","idea":"Useful"}]}' :
       '{"overview":"Thing","steps":[{"evidenceId":"p404-w0","explanation":"Unverified"}]}' }), /did not cite any verified/);
 });
+
+test("sentence evidence keeps section labels and precise word references", async () => {
+  const index = fakeIndex();
+  index.excerpts[0].boundary = "sentence";
+  index.excerpts[0].section = "First Reading";
+  index.excerpts[1].boundary = "paragraph";
+  index.excerpts[1].section = "Second Reading";
+  const request = prepareBatches(index)[0];
+  assert.match(request, /PDF outline: First Reading/);
+  assert.match(request, /PDF outline: Second Reading/);
+  assert.match(request, /sentence/);
+  let count = 0;
+  const prompts = [];
+  const guide = await generateGuide({
+    index, question: "Summarize the different readings",
+    sendModel: async prompt => {
+      prompts.push(prompt);
+      return ++count === 1
+        ? JSON.stringify({findings: [{evidenceId:"p1-w0", idea:"Learning"}]})
+        : JSON.stringify({overview:"Different readings.", steps:[{evidenceId:"p1-w0", explanation:"Explains AI."}]});
+    }
+  });
+  assert.equal(guide.steps[0].section, "First Reading");
+  assert.equal(guide.steps[0].boundary, "sentence");
+  assert.match(prompts[0], /MULTIPLE independent readings/);
+  assert.match(prompts[1], /different readings/);
+});
+
+test("invalid evidence boundary or excessive section is rejected", () => {
+  const index = fakeIndex();
+  index.excerpts[0].boundary = "invented";
+  assert.throws(() => prepareBatches(index), /Invalid/);
+  index.excerpts[0].boundary = "sentence";
+  index.excerpts[0].section = "X".repeat(141);
+  assert.throws(() => prepareBatches(index), /Invalid/);
+});
+
+test("existing evidence ID and viewport shape remain backward-compatible", () => {
+  const index = fakeIndex();
+  const batch = prepareBatches(index).join("");
+  assert.match(batch, /p1-w0/);
+  assert.match(batch, /p2-w0/);
+  assert.equal(index.excerpts[0].start_word, 0);
+  assert.equal(index.excerpts[0].end_word, 7);
+});

@@ -135,3 +135,25 @@ unusually laid out PDFs may need preprocessing. No OCR is performed.
 This remains experimental and separate from the manual tutor conversation.
 Model-generated summaries aren't persisted. The full real VS Code/Copilot
 integration requires an Extension Development Host test on Fedora.
+
+## More precise Guided Reading evidence (v0.4.1 experiment)
+
+Evidence is now indexed at sentence boundaries within PDF text blocks instead
+of using fixed 38-word slices. A sentence spanning several lines stays intact
+where possible, and very long sentences are divided into explicitly labeled,
+bounded fragments. Each excerpt still maps to an exact contiguous range of the
+same sorted PDF words used by the viewer; the fingerprint, position and exact
+text are checked before temporary highlighting.
+
+If the PDF has authored outline/bookmarks, these are included as **section
+hints** in the AI's analysis and shown beside the guided steps. Copilot is
+also told that a PDF might contain several independent readings, and should
+not invent a unified argument. Bookmark labels are not proof of distinct
+authorship; PDFs without outlines do not have verified reading boundaries.
+
+The default guided playback remains **12 seconds per step**. The original
+manual tutoring, annotations and PDF-writing tools are unchanged. Because
+sentence-sized excerpts may create additional model batches, the approval
+dialog continues to display the estimated Copilot request count before
+sending document text. Run both Python and Node regression tests on Fedora
+and check that highlighting starts at natural sentence boundaries.

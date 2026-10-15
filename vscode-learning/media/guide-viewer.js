@@ -24,7 +24,7 @@ function setupGuidedUI({ host, el, overlay, stage }) {
 
   function showActive() {
     const item = guide.plan.steps[guide.index];
-    el("guideActiveTitle").textContent = "Step " + (guide.index + 1) + " of " + guide.plan.steps.length + " · PDF page " + item.page;
+    el("guideActiveTitle").textContent = "Step " + (guide.index + 1) + " of " + guide.plan.steps.length + " · PDF page " + item.page + (item.section ? " · " + item.section : "");
     el("guideActiveExplanation").textContent = item.explanation;
     el("guideActiveQuote").textContent = item.quote;
     el("guidePrev").disabled = guide.index <= 0;
@@ -115,7 +115,7 @@ function setupGuidedUI({ host, el, overlay, stage }) {
       guide.plan.steps.forEach((item, number) => {
         const button = document.createElement("button");
         button.className = "guide-step";
-        button.textContent = "Step " + (number + 1) + " · Page " + item.page + " — " + item.explanation.slice(0, 115);
+        button.textContent = "Step " + (number + 1) + " · Page " + item.page + (item.section ? " · " + item.section : "") + " — " + item.explanation.slice(0, 115);
         button.addEventListener("click", () => { pause(); go(number); });
         fragment.appendChild(button);
       });
