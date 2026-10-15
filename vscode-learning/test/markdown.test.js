@@ -31,3 +31,34 @@ test("malicious HTML and Markdown links remain inert text", () => {
 test("unfinished streaming markdown does not throw", () => {
   assert.equal(parseMarkdown("### Heading\n\n```js\nconsole.log('still typing')").at(-1).kind, "code");
 });
+
+test("numbered items separated by blank lines remain one ordered list", () => {
+  const blocks = parseMarkdown("1. **Hidden layers:** extract features.\n\n1. **Representations:** encode patterns.");
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].kind, "ol");
+  assert.equal(blocks[0].start, 1);
+  assert.equal(blocks[0].items.length, 2);
+});
+
+test("ordered list retains its authored starting number", () => {
+  const blocks = parseMarkdown("3. Third item\n\n4. Fourth item");
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].start, 3);
+  assert.equal(blocks[0].items.length, 2);
+  const document = {
+    createTextNode(text) { return { text }; },
+    createElement(tag) {
+      return { tag, textContent: "", appendChild(child) { this.children ??= []; this.children.push(child); } };
+    }
+  };
+  const target = { ownerDocument: document, replaceChildren(...nodes) { this.nodes = nodes; } };
+  renderMarkdown(target, "3. Third item\n\n4. Fourth item");
+  assert.equal(target.nodes[0].tag, "ol");
+  assert.equal(target.nodes[0].start, 3);
+  assert.equal(target.nodes[0].children.length, 2);
+});
+
+test("separate lists and paragraphs are not incorrectly merged", () => {
+  const blocks = parseMarkdown("1. First\n\nA standalone paragraph.\n\n1. Restart");
+  assert.deepEqual(blocks.map(b => b.kind), ["ol", "paragraph", "ol"]);
+});

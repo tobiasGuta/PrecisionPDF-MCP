@@ -69,3 +69,19 @@ webview, word selection, and actual Copilot access.
 - Run `npm --prefix vscode-learning test` at the repository root to execute
   tests for formatting and discussion history. Verify the UI and Copilot flow
   manually in the VS Code Extension Development Host.
+
+## Follow-up composer and passage switching (v0.2.1)
+
+The question composer stays visible at the bottom of the tutor pane while
+the discussion above it scrolls independently. Use **Ctrl+Enter** to send a
+question. **New discussion** clears the conversation and its active passage.
+Finishing a new text selection clears the previous discussion immediately;
+reselecting the same passage retains its history. Switching PDF pages also
+clears the discussion. Blank lines between numbered Markdown items no longer
+restart ordered lists at 1.
+
+To verify in the Extension Development Host: explain passage A, send a follow-up
+without scrolling back to the input, select passage B (the old conversation
+should disappear), ask about B, click New discussion (history should disappear),
+then ask a new question without old context. The page and annotation tools
+remain read-only in Learning Mode.

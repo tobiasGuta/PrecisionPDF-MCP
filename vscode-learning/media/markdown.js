@@ -53,12 +53,19 @@ function parseMarkdown(input) {
     }
     if (/^\s*(?:[-*+]\s+|\d+\.\s+)/.test(line)) {
       const ordered = /^\s*\d+\./.test(line);
+      const start = ordered ? Number(line.trim().match(/^\d+/)[0]) : undefined;
+      const marker = ordered ? /^\s*\d+\.\s+/ : /^\s*[-*+]\s+/;
       const items = [];
-      while (i < lines.length && /^\s*(?:[-*+]\s+|\d+\.\s+)/.test(lines[i])) {
-        items.push(parseInline(lines[i].replace(/^\s*(?:[-*+]\s+|\d+\.\s+)/, "")));
+      // Blank lines are allowed *between* items. Otherwise each item becomes
+      // a separate <ol> and displays as "1." even in a continuing sequence.
+      while (i < lines.length && marker.test(lines[i])) {
+        items.push(parseInline(lines[i].replace(marker, "")));
         i++;
+        let next = i;
+        while (next < lines.length && !lines[next].trim() && next - i < 2) next++;
+        if (next > i && next < lines.length && marker.test(lines[next])) i = next;
       }
-      blocks.push({ kind: ordered ? "ol" : "ul", items });
+      blocks.push({ kind: ordered ? "ol" : "ul", start, items });
       continue;
     }
     if (/^\s*>\s?/.test(line)) {
@@ -100,6 +107,7 @@ function renderMarkdown(target, input) {
       appendInline(node, block.content);
     } else if (block.kind === "ul" || block.kind === "ol") {
       node = doc.createElement(block.kind);
+      if (block.kind === "ol") node.start = block.start;
       for (const item of block.items) {
         const li = doc.createElement("li");
         appendInline(li, item);

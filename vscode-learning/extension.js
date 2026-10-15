@@ -124,7 +124,7 @@ async function openLearningMode(context) {
     const userQuestion = String(request.question || "").trim().slice(0, 1500);
     if (!userQuestion) return send({ type: "error", message: "Enter a question." });
     const { changed, passage } = session.prepare(pageData.page, request.selection);
-    if (changed) send({ type: "thread-reset", reason: "New passage — starting a fresh discussion." });
+    if (changed) send({ type: "thread-reset", reason: "New passage — previous discussion cleared.", preserveSelection: true });
     const prompt = buildPrompt({
       file: picked.filename, page: pageData.page,
       selection: passage, pageText: pageData.text, question: userQuestion
@@ -169,6 +169,18 @@ async function openLearningMode(context) {
     if (message.type === "ready") void load(1);
     if (message.type === "navigate") void load(message.page);
     if (message.type === "ask") void explain(message);
+    // Selection changes reset history immediately, without making a model call.
+    if (message.type === "selectionChanged" && pageData && !busy) {
+      const incoming = String(message.selection || "").trim().slice(0, 2500);
+      if (incoming) {
+        const { changed } = session.prepare(pageData.page, incoming);
+        if (changed) send({
+          type: "thread-reset",
+          reason: "New passage — previous discussion cleared.",
+          preserveSelection: true
+        });
+      }
+    }
     if (message.type === "reset" && !busy) {
       session.reset();
       send({ type: "thread-reset", reason: "New discussion started." });

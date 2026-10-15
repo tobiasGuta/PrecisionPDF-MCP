@@ -11,12 +11,21 @@ let dragging = false;
 let answering = false;
 let answerText = "";
 let activeAnswer = null;
+let currentContext = "";
 
 function selectionText() {
   if (!page || selectedStart < 0 || selectedEnd < 0) return "";
   const first = Math.min(selectedStart, selectedEnd);
   const last = Math.max(selectedStart, selectedEnd);
   return page.words.slice(first, last + 1).map((w) => w[4]).join(" ").slice(0, 2500);
+}
+
+function updateComposerContext() {
+  const passage = selectionText() || currentContext;
+  const label = page ? "Page " + page.page + " · " : "";
+  el("composerContext").textContent = label + (passage
+    ? "Discussing: " + passage.slice(0, 95) + (passage.length > 95 ? "…" : "")
+    : "Ask about this page or select a passage");
 }
 
 function drawSelection() {
@@ -28,6 +37,7 @@ function drawSelection() {
   });
   el("selection").textContent = selectionText() ||
     "No text selected. Follow-ups stay connected to the previous passage until you start a new discussion.";
+  updateComposerContext();
 }
 
 function resetSelection() {
@@ -82,7 +92,16 @@ overlay.addEventListener("pointerover", (event) => {
     drawSelection();
   }
 });
-window.addEventListener("pointerup", () => { dragging = false; });
+window.addEventListener("pointerup", () => {
+  if (!dragging) return;
+  dragging = false;
+  const selection = selectionText();
+  if (selection && selection !== currentContext) {
+    currentContext = selection;
+    host.postMessage({ type: "selectionChanged", selection });
+  }
+  updateComposerContext();
+});
 window.addEventListener("blur", () => { dragging = false; });
 
 function navigate(delta) {
@@ -91,11 +110,13 @@ function navigate(delta) {
   if (next >= 1 && next <= page.pages) host.postMessage({ type: "navigate", page: next });
 }
 
-function clearThread(reason) {
+function clearThread(reason, preserveSelection = false) {
   el("thread").replaceChildren();
   answerText = "";
   activeAnswer = null;
   el("threadStatus").textContent = reason || "Select a passage and ask your first question.";
+  if (!preserveSelection) currentContext = "";
+  updateComposerContext();
 }
 
 function beginTurn(message) {
@@ -123,12 +144,18 @@ function beginTurn(message) {
   el("threadStatus").textContent = "Discussion — follow-up questions will retain this passage.";
   activeAnswer = answer;
   answerText = "";
-  card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  const scroller = el("tutorScroll");
+  scroller.scrollTop = scroller.scrollHeight;
 }
 
 // Do not re-render the entire page while streaming a response.
 function updateAnswer() {
-  if (activeAnswer) globalThis.PrecisionPDFMarkdown.renderMarkdown(activeAnswer, answerText);
+  if (!activeAnswer) return;
+  const scroller = el("tutorScroll");
+  const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 140;
+  globalThis.PrecisionPDFMarkdown.renderMarkdown(activeAnswer, answerText);
+  // Follow a streaming answer only when the reader is already near the bottom.
+  if (nearBottom) scroller.scrollTop = scroller.scrollHeight;
 }
 
 el("prev").addEventListener("click", () => navigate(-1));
@@ -136,6 +163,7 @@ el("next").addEventListener("click", () => navigate(1));
 el("clear").addEventListener("click", resetSelection);
 el("newThread").addEventListener("click", () => {
   if (answering) return;
+  currentContext = "";
   resetSelection();
   host.postMessage({ type: "reset" });
 });
@@ -146,6 +174,12 @@ el("ask").addEventListener("click", () => {
   answering = true;
   el("ask").disabled = true;
   host.postMessage({ type: "ask", selection: selectionText(), question });
+});
+el("question").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    el("ask").click();
+  }
 });
 el("copy").addEventListener("click", () => {
   if (!page) return;
@@ -161,7 +195,7 @@ window.addEventListener("message", (event) => {
   } else if (message.type === "page") {
     render(message.data);
   } else if (message.type === "thread-reset") {
-    clearThread(message.reason);
+    clearThread(message.reason, message.preserveSelection === true);
   } else if (message.type === "thinking") {
     beginTurn(message);
   } else if (message.type === "chunk") {
@@ -172,6 +206,7 @@ window.addEventListener("message", (event) => {
     answering = false;
     el("ask").disabled = false;
     el("question").value = "";
+    el("question").focus();
   } else if (message.type === "error") {
     el("notice").textContent = message.message;
     if (activeAnswer) {
