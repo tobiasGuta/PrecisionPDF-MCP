@@ -1,7 +1,7 @@
 "use strict";
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { parseMarkdown, parseInline, renderMarkdown } = require("../markdown");
+const { parseMarkdown, parseInline, renderMarkdown } = require("../media/markdown");
 
 test("parses headings, lists, fenced code, inline formatting and math", () => {
   const blocks = parseMarkdown("## Author's explanation\n\n* **Evidence** here\n* *Second* item\n\n```python\nprint('ok')\n```\n\nAn equation \\(a+b\\) matters.\n\n$$\nx^2 + y^2\n$$");
