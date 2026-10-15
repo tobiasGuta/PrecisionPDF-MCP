@@ -186,3 +186,33 @@ examples, **not all semantic mentions**; checking that an excerpt exists
 does not establish that every explanation is correct. A missing exact match
 is reported as zero, without made-up evidence. Previous/Next and Play/Pause
 retain the established 12-second interval. None of these functions edit a PDF.
+
+## Relevance-aware Guided Reading (v0.6 experiment)
+
+For Copilot-guided explanations (including **Explore related ideas**),
+PrecisionPDF now performs three bounded stages: identify candidate excerpts,
+draft an explanation tour, and request a **skeptical relevance review** of
+each proposed explanation against its exact source quote and the user
+question. The review may classify each source as **direct**, **broader**, or
+**reject**; missing or invalid reviews reject that passage. A passage already
+classified as broader cannot be upgraded to direct later. Fewer high-quality
+passages are preferred; the interface does not try to fill a fixed step quota.
+
+**Direct evidence** appears in the main guided tour by default. **Broader
+connections** are separate and initially hidden; click **Show broader
+connections** to opt in. If no direct evidence survives review, the guide
+does not start playback or claim it answered the question, but allows
+optional viewing of broader evidence. Each step shows the proposed relevance
+reason and the reviewer's reason. Excluded or unsupported passages are not
+presented or highlighted. The overview contains only reviewed direct-step
+explanations, not rejected or hidden broader material.
+
+This is an extra model request per guided analysis (the permission prompt
+now accounts for **evidence batches + synthesis + review**). These
+classifications are **AI judgments, not independent truth verification**;
+the underlying quote, page, word positions and PDF fingerprint remain
+locally verified as before. Always check that the explanation actually
+follows from the source. Exact wording searches are still entirely local,
+exhaustive within the supported full document, and require zero Copilot
+requests. The Play/Pause cadence remains 12 seconds per step; manual tutoring,
+PDF annotations, and original documents are unchanged.

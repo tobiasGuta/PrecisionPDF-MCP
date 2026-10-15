@@ -72,6 +72,7 @@
         <div id="guideResults" hidden>
           <h3 id="guideOverviewTitle">Document overview</h3>
           <p id="guideOverview"></p>
+          <p class="hint" id="guideReviewInfo" hidden></p>
           <button id="guideRelated" hidden>Explore related ideas with Copilot</button>
           <div class="guide-controls">
             <button id="guidePrev" disabled>Previous</button>
@@ -81,10 +82,17 @@
           <div id="guideActive" hidden>
             <h3 id="guideActiveTitle"></h3>
             <p id="guideActiveExplanation"></p>
+            <p class="hint" id="guideEvidenceRelation"></p>
+            <p class="hint" id="guideEvidenceReview"></p>
             <div class="guide-source"><strong>Evidence (temporary highlight)</strong><p id="guideActiveQuote"></p></div>
           </div>
-          <h3 id="guideListTitle">Explore other ideas</h3>
+          <h3 id="guideListTitle">Direct evidence</h3>
           <div id="guideSteps" class="guide-steps"></div>
+          <section id="guideBroaderSection" hidden aria-label="Optional broader connections">
+            <button id="guideBroaderToggle" aria-expanded="false" aria-controls="guideBroaderSteps">Show broader connections</button>
+            <p class="hint">Optional AI-selected background and consequences. These passages do not directly answer your question.</p>
+            <div id="guideBroaderSteps" class="guide-steps" hidden></div>
+          </section>
         </div>
       </section>
     </aside>

@@ -80,7 +80,8 @@ function attachGuidedReading({ vscode, repo, picked, send, load, currentPage, pa
       }
       const batches = prepareBatches(index);
       send({ type: "guide-progress", message: "Indexed " + index.pages + " pages; " + batches.length + " analysis sections." });
-      const count = batches.length + 1;
+      // Candidate analysis + synthesis + skeptical evidence review.
+      const count = batches.length + 2;
       const agreed = await vscode.window.showWarningMessage(
         "Guided Reading will send extracted PDF text to GitHub Copilot using up to " + count +
         " model requests (" + index.pages + " pages). This may use your plan quota. Continue?",
@@ -99,7 +100,8 @@ function attachGuidedReading({ vscode, repo, picked, send, load, currentPage, pa
       if (cancelled || disposed) throw new Error("Guided analysis cancelled.");
       send({ type: "guide-plan", plan });
       working = false;
-      await activateStep(0);
+      // Broader-only findings require the user's explicit opt-in before highlights.
+      if (plan.directCount > 0) await activateStep(0);
     } catch (error) {
       plan = null;
       if (!disposed) send({ type: "guide-error", message: error.message || String(error) });

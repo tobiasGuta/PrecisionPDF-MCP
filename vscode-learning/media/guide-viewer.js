@@ -2,8 +2,14 @@
 
 // The guide highlights the existing read-only PDF word overlay, not PDF annotations.
 function setupGuidedUI({ host, el, overlay, stage }) {
-  const guide = { plan: null, index: -1, playing: false, timer: null, pending: false };
+  const guide = { plan: null, index: -1, playing: false, timer: null, pending: false, showBroader: false };
   const panel = el("guidePanel");
+
+  function visibleCount() {
+    if (!guide.plan) return 0;
+    return guide.plan.type === "exact" || guide.showBroader
+      ? guide.plan.steps.length : guide.plan.directCount;
+  }
 
   function clearClock() { if (guide.timer) clearTimeout(guide.timer); guide.timer = null; }
   function pause() { guide.playing = false; clearClock(); el("guidePlay").textContent = "Play"; }
@@ -29,17 +35,24 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     el("guideActiveTitle").textContent = (exact ? "Match " : "Step ") + (guide.index + 1) +
       " of " + guide.plan.steps.length + " · PDF page " + item.page + (item.section ? " · " + item.section : "");
     el("guideActiveExplanation").textContent = exact ? "Context: " + item.context : item.explanation;
+    el("guideEvidenceRelation").textContent = exact ? "" : "Why this passage was selected: " + item.why;
+    el("guideEvidenceReview").textContent = exact ? "" :
+      "AI relevance review: " + item.reviewReason + " (" +
+      (item.relevance === "direct" ? "direct evidence" : "broader connection") +
+      "; interpretation is not independently verified).";
     el("guideActiveQuote").textContent = item.quote;
     el("guidePrev").disabled = guide.index <= 0;
-    el("guideNext").disabled = guide.index >= guide.plan.steps.length - 1;
-    el("guideSteps").querySelectorAll("button").forEach((button, n) => {
-      button.setAttribute("aria-current", n === guide.index ? "step" : "false");
-    });
+    el("guideNext").disabled = guide.index >= visibleCount() - 1;
+    for (const listId of ["guideSteps", "guideBroaderSteps"]) {
+      el(listId).querySelectorAll("button").forEach(button => {
+        button.setAttribute("aria-current", Number(button.dataset.index) === guide.index ? "step" : "false");
+      });
+    }
     applyHighlight();
   }
 
   function go(number) {
-    if (!guide.plan || guide.pending || number < 0 || number >= guide.plan.steps.length) return;
+    if (!guide.plan || guide.pending || number < 0 || number >= visibleCount()) return;
     clearClock();
     guide.pending = true;
     host.postMessage({ type: "guideGoto", number });
@@ -48,7 +61,7 @@ function setupGuidedUI({ host, el, overlay, stage }) {
   function schedule() {
     clearClock();
     if (!guide.playing || guide.pending || !guide.plan) return;
-    if (guide.index >= guide.plan.steps.length - 1) { pause(); return; }
+    if (guide.index >= visibleCount() - 1) { pause(); return; }
     guide.timer = setTimeout(() => go(guide.index + 1), 12000);
   }
 
@@ -64,9 +77,15 @@ function setupGuidedUI({ host, el, overlay, stage }) {
 
   function clearResults() {
     pause();
-    guide.plan = null; guide.index = -1; guide.pending = false;
+    guide.plan = null; guide.index = -1; guide.pending = false; guide.showBroader = false;
     el("guideResults").hidden = true;
     el("guideSteps").replaceChildren();
+    el("guideBroaderSteps").replaceChildren();
+    el("guideBroaderSteps").hidden = true;
+    el("guideBroaderSection").hidden = true;
+    el("guideBroaderToggle").setAttribute("aria-expanded", "false");
+    el("guideBroaderToggle").textContent = "Show broader connections";
+    el("guideReviewInfo").hidden = true;
     el("guideActive").hidden = true;
     el("guideRelated").hidden = true;
     el("guidePlay").disabled = true;
@@ -95,12 +114,31 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     host.postMessage({ type: "guideCancel" });
     el("guideStatus").textContent = "Cancelling analysis…";
   });
+  el("guideBroaderToggle").addEventListener("click", () => {
+    if (!guide.plan || guide.plan.type === "exact") return;
+    pause();
+    guide.showBroader = !guide.showBroader;
+    el("guideBroaderSteps").hidden = !guide.showBroader;
+    el("guideBroaderToggle").setAttribute("aria-expanded", String(guide.showBroader));
+    el("guideBroaderToggle").textContent = guide.showBroader ? "Hide broader connections" : "Show broader connections";
+    if (!guide.showBroader && guide.index >= guide.plan.directCount) {
+      guide.index = -1;
+      el("guideActive").hidden = true;
+      overlay.querySelectorAll(".word.guided").forEach(n => n.classList.remove("guided"));
+      if (guide.plan.directCount) go(0);
+    }
+    el("guidePlay").disabled = visibleCount() === 0;
+    el("guideNext").disabled = guide.index >= visibleCount() - 1;
+    // Showing broader evidence is an explicit opt-in; start with its first
+    // verified passage if there were no direct passages to present.
+    if (guide.showBroader && guide.plan.directCount === 0 && guide.index < 0 && visibleCount() > 0) go(0);
+  });
   el("guidePrev").addEventListener("click", () => { pause(); go(guide.index - 1); });
   el("guideNext").addEventListener("click", () => { pause(); go(guide.index + 1); });
   el("guidePlay").addEventListener("click", () => {
     if (!guide.plan) return;
     if (guide.playing) { pause(); return; }
-    if (guide.index >= guide.plan.steps.length - 1) go(0);
+    if (guide.index >= visibleCount() - 1) go(0);
     guide.playing = true;
     el("guidePlay").textContent = "Pause";
     schedule();
@@ -124,29 +162,42 @@ function setupGuidedUI({ host, el, overlay, stage }) {
       el("guideCancel").hidden = true;
       const exact = guide.plan.type === "exact";
       el("guideStatus").textContent = exact
-        ? "Local search complete: " + guide.plan.totalMatches + " exact matches on " +
-          guide.plan.pageCount + " pages (showing " + guide.plan.shownMatches + "). No Copilot requests."
-        : "Ready: " + guide.plan.pages + " pages analyzed, " + guide.plan.steps.length + " selected evidence steps.";
+        ? "Local search complete: " + guide.plan.totalMatches + " exact " +
+          (guide.plan.totalMatches === 1 ? "match" : "matches") + " on " +
+          guide.plan.pageCount + " " + (guide.plan.pageCount === 1 ? "page" : "pages") +
+          " (showing " + guide.plan.shownMatches + "). No Copilot requests."
+        : "AI review: " + guide.plan.directCount + " direct, " + guide.plan.broaderCount +
+          " optional broader, " + guide.plan.rejectedCount + " excluded.";
       el("guideOverviewTitle").textContent = exact ? "Exact-wording search" : "Document overview";
-      el("guideListTitle").textContent = exact ? "Exact matches (click to highlight)" : "Explore other ideas";
+      el("guideListTitle").textContent = exact ? "Exact matches (click to highlight)" : "Direct evidence (AI-reviewed)";
+      el("guideReviewInfo").hidden = exact;
+      if (!exact) el("guideReviewInfo").textContent = guide.plan.directCount
+        ? "Only direct evidence is shown in the default tour. Other connections are optional. Classifications are AI judgments, not proof."
+        : "No direct evidence passed the AI review. Optional broader connections are hidden unless you choose to view them.";
+      el("guideBroaderSection").hidden = exact || guide.plan.broaderCount === 0;
       el("guideRelated").hidden = !exact;
-      el("guidePlay").disabled = guide.plan.steps.length === 0;
-      el("guidePrev").disabled = guide.plan.steps.length === 0;
-      el("guideNext").disabled = guide.plan.steps.length === 0;
+      el("guidePlay").disabled = visibleCount() === 0;
+      el("guidePrev").disabled = true;
+      // The first confirmed activation determines where Next can navigate.
+      el("guideNext").disabled = true;
       el("guideOverview").textContent = guide.plan.overview;
       el("guideResults").hidden = false;
-      el("guideActive").hidden = guide.plan.steps.length === 0;
-      const fragment = document.createDocumentFragment();
+      el("guideActive").hidden = true;
+      const directList = document.createDocumentFragment();
+      const broaderList = document.createDocumentFragment();
+      const directCount = exact ? guide.plan.steps.length : guide.plan.directCount;
       guide.plan.steps.forEach((item, number) => {
         const button = document.createElement("button");
         button.className = "guide-step";
+        button.dataset.index = String(number);
         button.textContent = (exact ? "Match " : "Step ") + (number + 1) + " · Page " + item.page +
           (item.section ? " · " + item.section : "") + " — " +
           (exact ? item.quote.slice(0, 160) : item.explanation.slice(0, 115));
         button.addEventListener("click", () => { pause(); go(number); });
-        fragment.appendChild(button);
+        (number < directCount ? directList : broaderList).appendChild(button);
       });
-      el("guideSteps").replaceChildren(fragment);
+      el("guideSteps").replaceChildren(directList);
+      el("guideBroaderSteps").replaceChildren(broaderList);
       return true;
     }
     if (message.type === "guide-activate") {
