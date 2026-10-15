@@ -157,3 +157,32 @@ sentence-sized excerpts may create additional model batches, the approval
 dialog continues to display the estimated Copilot request count before
 sending document text. Run both Python and Node regression tests on Fedora
 and check that highlighting starts at natural sentence boundaries.
+
+## Query-aware exact search and guided explanation (v0.5 experiment)
+
+Guided Reading now has an **Automatic / Find exact wording / Guided explanation**
+selector. In Automatic mode, a location question with a short quoted phrase,
+such as `Where does it mention "black box"?`, takes the **local exact-search**
+path. `Find all mentions of black box` is also understood. Other requests,
+such as `Explain why the black-box problem matters` or `What are the main
+ideas?`, use the existing Copilot-guided explanation flow. The dropdown lets
+you override automatic routing.
+
+**Exact search** examines every indexed PDF word on every page, including
+phrases crossing sentence-index boundaries. Matches ignore case and outer
+punctuation. It reports the **total number of matching occurrences** and
+the number of matching pages. Up to 150 matches are displayed as clickable
+page-linked temporary highlights; a larger result set reports the full
+count but clearly indicates that only the first 150 are displayed.
+The index must be complete and internally consistent, or searching fails
+closed; no truncated document can be claimed as fully searched. Local exact
+search makes **zero Copilot requests** and never uploads PDF text.
+
+From exact results, **Explore related ideas with Copilot** explicitly switches
+to the existing non-exhaustive guided explanation workflow. That workflow
+asks permission and estimates the model-request count before any extracted
+PDF text is sent to Copilot. Related passages are AI-selected supporting
+examples, **not all semantic mentions**; checking that an excerpt exists
+does not establish that every explanation is correct. A missing exact match
+is reported as zero, without made-up evidence. Previous/Next and Play/Pause
+retain the established 12-second interval. None of these functions edit a PDF.

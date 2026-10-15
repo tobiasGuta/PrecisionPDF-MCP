@@ -24,8 +24,11 @@ function setupGuidedUI({ host, el, overlay, stage }) {
 
   function showActive() {
     const item = guide.plan.steps[guide.index];
-    el("guideActiveTitle").textContent = "Step " + (guide.index + 1) + " of " + guide.plan.steps.length + " · PDF page " + item.page + (item.section ? " · " + item.section : "");
-    el("guideActiveExplanation").textContent = item.explanation;
+    el("guideActive").hidden = false;
+    const exact = guide.plan.type === "exact";
+    el("guideActiveTitle").textContent = (exact ? "Match " : "Step ") + (guide.index + 1) +
+      " of " + guide.plan.steps.length + " · PDF page " + item.page + (item.section ? " · " + item.section : "");
+    el("guideActiveExplanation").textContent = exact ? "Context: " + item.context : item.explanation;
     el("guideActiveQuote").textContent = item.quote;
     el("guidePrev").disabled = guide.index <= 0;
     el("guideNext").disabled = guide.index >= guide.plan.steps.length - 1;
@@ -64,6 +67,9 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     guide.plan = null; guide.index = -1; guide.pending = false;
     el("guideResults").hidden = true;
     el("guideSteps").replaceChildren();
+    el("guideActive").hidden = true;
+    el("guideRelated").hidden = true;
+    el("guidePlay").disabled = true;
     overlay.querySelectorAll(".word.guided").forEach(n => n.classList.remove("guided"));
   }
 
@@ -75,7 +81,15 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     clearResults();
     el("guideStart").disabled = true;
     el("guideCancel").hidden = false;
-    host.postMessage({ type: "guideStart", question });
+    host.postMessage({ type: "guideStart", question, approach: el("guideApproach").value });
+  });
+  el("guideRelated").addEventListener("click", () => {
+    const question = el("guideQuestion").value.trim();
+    if (!question) return;
+    clearResults();
+    el("guideStart").disabled = true;
+    el("guideCancel").hidden = false;
+    host.postMessage({ type: "guideRelated", question });
   });
   el("guideCancel").addEventListener("click", () => {
     host.postMessage({ type: "guideCancel" });
@@ -108,14 +122,27 @@ function setupGuidedUI({ host, el, overlay, stage }) {
       guide.plan = message.plan;
       el("guideStart").disabled = false;
       el("guideCancel").hidden = true;
-      el("guideStatus").textContent = "Ready: " + guide.plan.pages + " pages analyzed, " + guide.plan.steps.length + " grounded steps.";
+      const exact = guide.plan.type === "exact";
+      el("guideStatus").textContent = exact
+        ? "Local search complete: " + guide.plan.totalMatches + " exact matches on " +
+          guide.plan.pageCount + " pages (showing " + guide.plan.shownMatches + "). No Copilot requests."
+        : "Ready: " + guide.plan.pages + " pages analyzed, " + guide.plan.steps.length + " selected evidence steps.";
+      el("guideOverviewTitle").textContent = exact ? "Exact-wording search" : "Document overview";
+      el("guideListTitle").textContent = exact ? "Exact matches (click to highlight)" : "Explore other ideas";
+      el("guideRelated").hidden = !exact;
+      el("guidePlay").disabled = guide.plan.steps.length === 0;
+      el("guidePrev").disabled = guide.plan.steps.length === 0;
+      el("guideNext").disabled = guide.plan.steps.length === 0;
       el("guideOverview").textContent = guide.plan.overview;
       el("guideResults").hidden = false;
+      el("guideActive").hidden = guide.plan.steps.length === 0;
       const fragment = document.createDocumentFragment();
       guide.plan.steps.forEach((item, number) => {
         const button = document.createElement("button");
         button.className = "guide-step";
-        button.textContent = "Step " + (number + 1) + " · Page " + item.page + (item.section ? " · " + item.section : "") + " — " + item.explanation.slice(0, 115);
+        button.textContent = (exact ? "Match " : "Step ") + (number + 1) + " · Page " + item.page +
+          (item.section ? " · " + item.section : "") + " — " +
+          (exact ? item.quote.slice(0, 160) : item.explanation.slice(0, 115));
         button.addEventListener("click", () => { pause(); go(number); });
         fragment.appendChild(button);
       });

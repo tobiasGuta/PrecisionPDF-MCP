@@ -2,6 +2,7 @@
 
 const { execFile } = require("node:child_process");
 const { prepareBatches, generateGuide } = require("./guide");
+const { resolveQuery, findExactMentions } = require("./search");
 
 function readIndex(vscode, repo, picked) {
   return new Promise((resolve, reject) => {
@@ -56,7 +57,7 @@ function attachGuidedReading({ vscode, repo, picked, send, load, currentPage, pa
     send({ type: "guide-activate", number, step });
   }
 
-  async function start(question) {
+  async function start(question, approach = "auto") {
     if (working || tutoringBusy() || disposed) return;
     working = true;
     cancelled = false;
@@ -65,7 +66,18 @@ function attachGuidedReading({ vscode, repo, picked, send, load, currentPage, pa
     send({ type: "guide-clear" });
     send({ type: "guide-progress", message: "Indexing PDF text locally…" });
     try {
+      // Classify locally. Exact quote search never invokes Copilot or asks
+      // permission to upload document text.
+      const route = resolveQuery(question, approach);
       index = await readIndex(vscode, repo, picked);
+      if (cancelled || disposed) { send({ type: "guide-cancelled" }); return; }
+      if (route.kind === "exact") {
+        plan = findExactMentions(index, route.phrase);
+        send({ type: "guide-plan", plan });
+        working = false;
+        if (plan.steps.length) await activateStep(0);
+        return;
+      }
       const batches = prepareBatches(index);
       send({ type: "guide-progress", message: "Indexed " + index.pages + " pages; " + batches.length + " analysis sections." });
       const count = batches.length + 1;
@@ -98,7 +110,15 @@ function attachGuidedReading({ vscode, repo, picked, send, load, currentPage, pa
   }
 
   function handle(message) {
-    if (message.type === "guideStart") { void start(String(message.question || "").slice(0, 800)); return true; }
+    if (message.type === "guideStart") {
+      void start(String(message.question || "").slice(0, 800), message.approach || "auto");
+      return true;
+    }
+    if (message.type === "guideRelated") {
+      // Related/conceptual evidence is selected by Copilot, not exhaustive.
+      void start(String(message.question || "").slice(0, 800), "guided");
+      return true;
+    }
     if (message.type === "guideGoto") {
       void activateStep(message.number).catch(error => send({ type: "guide-error", message: error.message }));
       return true;

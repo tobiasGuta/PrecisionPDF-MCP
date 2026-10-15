@@ -130,3 +130,15 @@ textarea:focus-visible, button:focus-visible { outline: 2px solid var(--vscode-f
 .guide-step { text-align: left; overflow-wrap: anywhere; white-space: normal; }
 .guide-step[aria-current="step"] { outline: 2px solid var(--vscode-focusBorder); }
 #guideOverview, #guideActiveExplanation { line-height: 1.6; }
+
+/* Query-aware whole-document search controls. */
+#guideApproach {
+  width: 100%; padding: 8px;
+  color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+  border-radius: 5px;
+}
+#guideApproach:focus-visible { outline: 2px solid var(--vscode-focusBorder); }
+#guideRelated { align-self: flex-start; white-space: normal; text-align: left; }
+#guideActive .guide-source { margin-top: 10px; }

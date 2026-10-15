@@ -54,27 +54,36 @@
       </div>
       <section class="guide-panel" id="guidePanel" hidden aria-label="Guided Reading">
         <h2>Guided Reading</h2>
-        <p class="hint">Ask about the entire PDF. Copilot will identify main ideas, then PrecisionPDF will verify and highlight the supporting words. The PDF itself is never edited.</p>
+        <p class="hint">Find exact wording throughout the PDF without a model, or ask Copilot for selected supporting ideas and explanations. All highlights are temporary; your PDF is never edited.</p>
         <label for="guideQuestion">What would you like to learn about this PDF?</label>
         <textarea id="guideQuestion" rows="3" maxlength="800">What are the main ideas of this PDF? Explain them in order using evidence from the document.</textarea>
+        <label for="guideApproach">Search behavior</label>
+        <select id="guideApproach" aria-label="Choose how to search">
+          <option value="auto">Automatic: detect exact search or explanation</option>
+          <option value="exact">Find exact wording (local; no Copilot)</option>
+          <option value="guided">Guided explanation (Copilot)</option>
+        </select>
         <div class="guide-actions">
-          <button id="guideStart" class="primary">Analyze PDF</button>
+          <button id="guideStart" class="primary">Find / Analyze</button>
           <button id="guideCancel" hidden>Cancel analysis</button>
         </div>
-        <p class="privacy">Document text is sent to Copilot only after approval. Larger PDFs may require multiple model requests against your existing plan quota.</p>
+        <p class="privacy">Exact wording search runs locally without a Copilot request. For guided explanations, your permission is required before sending extracted document text to Copilot.</p>
         <p class="hint" id="guideStatus" role="status">Ready. Select Analyze PDF to begin.</p>
         <div id="guideResults" hidden>
-          <h3>Document overview</h3>
+          <h3 id="guideOverviewTitle">Document overview</h3>
           <p id="guideOverview"></p>
+          <button id="guideRelated" hidden>Explore related ideas with Copilot</button>
           <div class="guide-controls">
             <button id="guidePrev" disabled>Previous</button>
             <button id="guidePlay">Play</button>
             <button id="guideNext" disabled>Next</button>
           </div>
-          <h3 id="guideActiveTitle"></h3>
-          <p id="guideActiveExplanation"></p>
-          <div class="guide-source"><strong>Evidence (temporary highlight)</strong><p id="guideActiveQuote"></p></div>
-          <h3>Explore other ideas</h3>
+          <div id="guideActive" hidden>
+            <h3 id="guideActiveTitle"></h3>
+            <p id="guideActiveExplanation"></p>
+            <div class="guide-source"><strong>Evidence (temporary highlight)</strong><p id="guideActiveQuote"></p></div>
+          </div>
+          <h3 id="guideListTitle">Explore other ideas</h3>
           <div id="guideSteps" class="guide-steps"></div>
         </div>
       </section>
