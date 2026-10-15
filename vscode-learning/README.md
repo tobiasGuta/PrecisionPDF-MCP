@@ -56,8 +56,8 @@ webview, word selection, and actual Copilot access.
 
 - Ask a question about selected PDF text, then ask another question without
   reselecting to continue discussing the same passage. The conversation shows
-  previous questions and answers until you change to a different passage,
-  navigate to a different page, or click **New discussion**.
+  previous questions and answers while you navigate pages and passages,
+  until you click **New discussion**.
 - The extension retains only the latest three bounded question/answer turns in
   memory for the model. Discussions are not saved to disk.
 - Copilot Markdown responses display headings, lists, basic emphasis, code
@@ -75,13 +75,36 @@ webview, word selection, and actual Copilot access.
 The question composer stays visible at the bottom of the tutor pane while
 the discussion above it scrolls independently. Use **Ctrl+Enter** to send a
 question. **New discussion** clears the conversation and its active passage.
-Finishing a new text selection clears the previous discussion immediately;
-reselecting the same passage retains its history. Switching PDF pages also
-clears the discussion. Blank lines between numbered Markdown items no longer
+Finishing a new text selection changes the active quote but preserves history.
+Switching PDF pages changes the active page and clears the active quote, but
+preserves earlier discussion. Blank lines between numbered Markdown items no longer
 restart ordered lists at 1.
 
 To verify in the Extension Development Host: explain passage A, send a follow-up
 without scrolling back to the input, select passage B (the old conversation
-should disappear), ask about B, click New discussion (history should disappear),
+should stay visible), ask about B, click New discussion (history should disappear),
 then ask a new question without old context. The page and annotation tools
 remain read-only in Learning Mode.
+
+## Continuous page-aware discussions (v0.3 experimental)
+
+Keep one visible discussion per open PDF while moving between pages or selecting
+new passages. The question composer stays at the bottom of the tutor panel.
+Navigation changes the active page, clears the active selection, and leaves all
+previous on-screen messages intact. New text selections replace the active
+source passage without deleting the conversation. The visible conversation is
+ephemeral and ends when you close Learning Mode.
+
+The AI receives the current page's extracted text and current selection, plus
+at most three bounded past question-answer turns including their page numbers
+and selected quotes. These past turns are context, not a replacement for full
+previous page contents. When comparing pages, the tutor must distinguish
+earlier quoted evidence from its own prior interpretations and acknowledge any
+missing source text. **New discussion** explicitly clears all chat context.
+**Clear selection** clears only the active quote, not the conversation.
+
+Suggested test: select a quote on page 3, ask for an explanation, navigate to
+page 4, ask to compare the discussion to the current page, return to page 3,
+then choose New discussion. Verify the discussion persists on navigation and
+vanishes only after New discussion. The PDF text-selection logic remains
+unchanged and no document edits are performed by Learning Mode.

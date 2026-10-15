@@ -1,6 +1,7 @@
 "use strict";
 
-// Keep only recent, explicitly requested tutoring turns. No disk persistence.
+// One in-memory discussion per opened PDF. Active evidence is page-scoped;
+// prior turns remain available as bounded conversational context.
 class TutorSession {
   constructor() { this.reset(); }
 
@@ -10,28 +11,50 @@ class TutorSession {
     this.turns = [];
   }
 
+  // Navigation updates the active page without deleting the conversation.
+  setPage(page) {
+    if (!Number.isSafeInteger(page) || page < 1) throw new Error("Invalid page number");
+    const changed = this.page !== page;
+    if (changed) {
+      this.page = page;
+      this.passage = "";
+    }
+    return { changed, page: this.page, passage: this.passage };
+  }
+
+  // A selection replaces only current evidence; past questions survive.
   prepare(page, selection) {
+    const pageState = this.setPage(page);
     const incoming = String(selection || "").trim().slice(0, 2500);
-    const changed = this.page !== null &&
-      (page !== this.page || Boolean(incoming && incoming !== this.passage));
-    if (changed) this.reset();
-    this.page = page;
+    const changed = Boolean(incoming && incoming !== this.passage);
     if (incoming) this.passage = incoming;
-    return { changed, passage: this.passage };
+    return { changed: pageState.changed || changed, passage: this.passage };
+  }
+
+  clearSelection() {
+    this.passage = "";
   }
 
   history() {
-    // Max 3 bounded prior question/answer pairs, quoted as context rather than instructions.
+    // Earlier tutor answers aren't independent documentary evidence.
+    // Include each turn's actual page and selected quote for cross-page follow-ups.
     return this.turns.slice(-3).map((turn, index) => [
       "Earlier tutoring exchange " + (index + 1) + " (reference only):",
-      "User question: " + turn.question.slice(0, 1500),
-      "Tutor answer: " + turn.answer.slice(0, 2500)
+      "PDF page: " + (turn.page ?? "unknown"),
+      "Selected source passage: " + (turn.passage ? JSON.stringify(turn.passage) : "(page context; no excerpt retained)"),
+      "User question: " + turn.question,
+      "Tutor answer (interpretation, not source evidence): " + turn.answer
     ].join("\n")).join("\n\n");
   }
 
   record(question, answer) {
     if (!String(answer || "").trim()) return;
-    this.turns.push({ question: String(question).slice(0, 1500), answer: String(answer).slice(0, 2500) });
+    this.turns.push({
+      page: this.page,
+      passage: this.passage.slice(0, 1200),
+      question: String(question || "").slice(0, 1500),
+      answer: String(answer).slice(0, 2500)
+    });
     this.turns = this.turns.slice(-3);
   }
 }

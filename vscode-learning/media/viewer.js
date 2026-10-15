@@ -72,7 +72,12 @@ function render(data) {
     fragment.appendChild(box);
   });
   overlay.appendChild(fragment);
+  // A previous page's passage must not be treated as evidence on this page.
+  currentContext = "";
   resetSelection();
+  if (el("thread").children.length) {
+    el("threadStatus").textContent = "Discussion preserved. Current source: page " + data.page + ".";
+  }
 }
 
 overlay.addEventListener("pointerdown", (event) => {
@@ -141,7 +146,7 @@ function beginTurn(message) {
   answer.textContent = "Thinking…";
   card.append(label, question, evidence, answerLabel, answer);
   el("thread").appendChild(card);
-  el("threadStatus").textContent = "Discussion — follow-up questions will retain this passage.";
+  el("threadStatus").textContent = "Discussion preserved across pages. New questions use the current page and selection.";
   activeAnswer = answer;
   answerText = "";
   const scroller = el("tutorScroll");
@@ -160,7 +165,11 @@ function updateAnswer() {
 
 el("prev").addEventListener("click", () => navigate(-1));
 el("next").addEventListener("click", () => navigate(1));
-el("clear").addEventListener("click", resetSelection);
+el("clear").addEventListener("click", () => {
+  currentContext = "";
+  resetSelection();
+  host.postMessage({ type: "selectionCleared" });
+});
 el("newThread").addEventListener("click", () => {
   if (answering) return;
   currentContext = "";
@@ -196,6 +205,11 @@ window.addEventListener("message", (event) => {
     render(message.data);
   } else if (message.type === "thread-reset") {
     clearThread(message.reason, message.preserveSelection === true);
+  } else if (message.type === "context-updated") {
+    updateComposerContext();
+    if (el("thread").children.length) {
+      el("threadStatus").textContent = "Discussion preserved. Using the current page and selection for your next question.";
+    }
   } else if (message.type === "thinking") {
     beginTurn(message);
   } else if (message.type === "chunk") {

@@ -107,10 +107,8 @@ async function openLearningMode(context) {
     send({ type: "loading" });
     try {
       const loaded = await readPage(repo, picked.root, picked.filename, n);
-      if (pageData && loaded.page !== pageData.page) {
-        session.reset();
-        send({ type: "thread-reset", reason: "New page — start a new discussion." });
-      }
+      // A new page changes active evidence without clearing the discussion.
+      session.setPage(loaded.page);
       pageData = loaded;
       send({ type: "page", data: loaded });
     } catch (error) {
@@ -124,7 +122,7 @@ async function openLearningMode(context) {
     const userQuestion = String(request.question || "").trim().slice(0, 1500);
     if (!userQuestion) return send({ type: "error", message: "Enter a question." });
     const { changed, passage } = session.prepare(pageData.page, request.selection);
-    if (changed) send({ type: "thread-reset", reason: "New passage — previous discussion cleared.", preserveSelection: true });
+    if (changed) send({ type: "context-updated" });
     const prompt = buildPrompt({
       file: picked.filename, page: pageData.page,
       selection: passage, pageText: pageData.text, question: userQuestion
@@ -169,17 +167,17 @@ async function openLearningMode(context) {
     if (message.type === "ready") void load(1);
     if (message.type === "navigate") void load(message.page);
     if (message.type === "ask") void explain(message);
-    // Selection changes reset history immediately, without making a model call.
+    // New selections change only the current focus; past questions stay visible.
     if (message.type === "selectionChanged" && pageData && !busy) {
       const incoming = String(message.selection || "").trim().slice(0, 2500);
       if (incoming) {
         const { changed } = session.prepare(pageData.page, incoming);
-        if (changed) send({
-          type: "thread-reset",
-          reason: "New passage — previous discussion cleared.",
-          preserveSelection: true
-        });
+        if (changed) send({ type: "context-updated" });
       }
+    }
+    if (message.type === "selectionCleared" && pageData && !busy) {
+      session.clearSelection();
+      send({ type: "context-updated" });
     }
     if (message.type === "reset" && !busy) {
       session.reset();
