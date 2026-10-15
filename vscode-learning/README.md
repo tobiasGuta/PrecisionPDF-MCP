@@ -250,3 +250,29 @@ Validation: run `npm --prefix vscode-learning test` and
 Repeat a guided interpretability question and confirm environmental water
 and data-center passages are excluded or the answer is conservatively
 shorter; inspect actual source passages before trusting the labels.
+
+## Clearer direct explanations and evidence-grounded overviews (v0.6.2)
+
+The existing Copilot relevance-review request now optionally returns a
+coherent, brief `directOverview` and the IDs of ALL accepted direct passages
+used to write it. The extension only uses that overview if every listed ID
+corresponds exactly to a passage that survived the review as direct evidence.
+Otherwise it displays short **verbatim source excerpts with page numbers**
+instead of joining repeated “this excerpt…” model descriptions. This checks
+provenance and source linkage, **not semantic correctness**; inspect the
+quoted evidence before accepting an interpretation. No extra Copilot request
+is introduced.
+
+The direct-versus-contextual boundary is stricter for *black-box* questions.
+Saying a neural network is merely *unreliable* or *unpredictable* does not by
+itself establish that its learned mechanisms are hard to interpret. Such an
+excerpt can only enter the optional context section with the existing
+verified quote and explicit conceptual bridge, or else it is excluded.
+The viewer labels direct passages as explanations of the asked concept and
+optional broader passages as **contextual examples, not direct proof**.
+
+No changes to exact local search, original text selection, PDF writes,
+fingerprint/coordinate verification, Copilot approval flow or the
+12-second guided playback cadence. Regression tests cover missing or
+mismatched overview provenance, no direct passages, semantic downgrades,
+contextual opt-in, and the unchanged search and manual tutor workflows.

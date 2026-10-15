@@ -91,6 +91,7 @@ test("default tour lists only direct passages and keeps broader evidence hidden"
   assert.match(el("guideStatus").textContent,/1 direct, 2 optional broader, 1 excluded/);
   assert.equal(el("guideReviewInfo").hidden,false);
   assert.match(el("guideReviewInfo").textContent,/AI judgments/);
+  assert.match(el("guideReviewInfo").textContent,/contextual examples/);
 });
 
 test("broader evidence requires an explicit opt-in and can be hidden again", () => {
@@ -118,7 +119,7 @@ test("no direct evidence means no automatic highlight or playback", () => {
   assert.equal(el("guideSteps").children.length,0);
   assert.equal(el("guidePlay").disabled,true);
   assert.equal(el("guideActive").hidden,true);
-  assert.match(el("guideReviewInfo").textContent,/No direct evidence/);
+  assert.match(el("guideReviewInfo").textContent,/No passage directly explained/);
   assert.equal(messages.length,0);
   el("guideBroaderToggle").click();
   assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1))),{type:"guideGoto",number:0});
@@ -163,4 +164,20 @@ test("a guide with zero broader connections has no optional section", () => {
   assert.equal(el("guideSteps").children.length,2);
   viewer.onMessage({type:"guide-activate",number:1,step:plan.steps[1]});
   assert.match(el("guideActiveTitle").textContent,/Direct evidence 2 of 2/);
+});
+
+test("guided overview and context are labeled distinctly from exact search", () => {
+  const {el,viewer}=createUI();
+  const plan=guidePlan(1,1);
+  plan.overview="Neural networks can be difficult to interpret.";
+  viewer.onMessage({type:"guide-plan",plan});
+  assert.equal(el("guideOverviewTitle").textContent,"Answer from reviewed direct evidence");
+  assert.equal(el("guideOverview").textContent,plan.overview);
+  assert.equal(el("guideListTitle").textContent,"Direct explanations (AI-reviewed)");
+  viewer.onMessage({type:"guide-activate",number:0,step:plan.steps[0]});
+  assert.match(el("guideEvidenceRelation").textContent,/How this answers your question:/);
+  el("guideBroaderToggle").click();
+  viewer.onMessage({type:"guide-activate",number:1,step:plan.steps[1]});
+  assert.match(el("guideEvidenceRelation").textContent,/Contextual connection \(not direct proof\):/);
+  assert.match(el("guideBroaderToggle").textContent,/contextual examples/);
 });

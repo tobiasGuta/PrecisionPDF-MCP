@@ -39,7 +39,7 @@ function sourceAddressesTopic(question, quote) {
   if (topic.type === "general") return true;
   const text = String(quote || "").normalize("NFKC").toLocaleLowerCase("en-US");
   if (topic.type === "black-box") {
-    return /\bblack[\s-]+box(?:es)?\b|\b(?:opaque|opacity|interpret\w*|explain\w*|unexplain\w*|inscrutab\w*|transparen\w*|legib\w*|unpredictab\w*)\b/i.test(text) ||
+    return /\bblack[\s-]+box(?:es)?\b|\b(?:opaque|opacity|interpret\w*|explain\w*|unexplain\w*|inscrutab\w*|transparen\w*|(?:il)?legib\w*|unpredictab\w*)\b/i.test(text) ||
       /\b(?:cannot|can't|unable to|hard to|difficult to)\s+(?:fully\s+)?(?:understand|predict|trace)\b/i.test(text);
   }
   const words = new Set(tokens(text));
@@ -47,6 +47,16 @@ function sourceAddressesTopic(question, quote) {
   // "discriminatory" without trusting arbitrary model-proposed synonyms.
   return topic.terms.some(term => words.has(term) ||
     (term.length >= 6 && [...words].some(word => word.startsWith(term.slice(0, 5)))));
+}
+
+function directlyExplainsTopic(question, sourceQuote) {
+  const topic = focus(question);
+  if (topic.type !== "black-box") return sourceAddressesTopic(question, sourceQuote);
+  const quote = String(sourceQuote || "").normalize("NFKC").toLocaleLowerCase("en-US");
+  // Unreliability or unpredictability alone are not statements about
+  // interpretability; they can be background evidence, not direct proof.
+  return /\bblack[\s-]+box(?:es)?\b|\b(?:opaque|opacity|interpret\w*|explain\w*|unexplain\w*|inscrutab\w*|transparen\w*|(?:il)?legib\w*)\b/i.test(quote) ||
+    /\b(?:cannot|can't|unable to|hard to|difficult to)\s+(?:fully\s+)?(?:understand|trace)\b/i.test(quote);
 }
 
 function groundedBridge(question, sourceQuote, decision) {
@@ -72,4 +82,4 @@ function groundedBridge(question, sourceQuote, decision) {
   return true;
 }
 
-module.exports = { focus, sourceAddressesTopic, groundedBridge };
+module.exports = { focus, sourceAddressesTopic, directlyExplainsTopic, groundedBridge };

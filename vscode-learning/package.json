@@ -2,7 +2,7 @@
   "name": "precisionpdf-learning",
   "displayName": "PrecisionPDF Learning Mode",
   "description": "Local PDF reading and optional Copilot-powered explanations for PrecisionPDF-MCP",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
   "license": "MIT",
   "engines": {

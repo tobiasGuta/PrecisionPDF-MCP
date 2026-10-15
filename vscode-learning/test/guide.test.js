@@ -37,7 +37,9 @@ function standardSequence() {
     { reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"Specifically discusses opacity."},
       {evidenceId:"p2-w0",decision:"broader",reason:"Accountability is a downstream concern of opacity.",
         bridgeQuote:"Opacity raises important accountability concerns.",
-        link:"Opacity and model interpretability create accountability concerns in deployments."}] }
+        link:"Opacity and model interpretability create accountability concerns in deployments."}],
+      directOverview:"Neural networks are difficult to interpret because their behavior can be opaque.",
+      overviewEvidenceIds:["p1-w0"] }
   );
 }
 
@@ -248,4 +250,66 @@ test("accepted broader steps use reviewer connection rather than misleading draf
   assert.doesNotMatch(result.steps[1].explanation,/directly answers/i);
   assert.equal(result.steps[1].why,"Opacity and model interpretability create accountability concerns in deployments.");
   assert.match(m.prompts[2],/bridgeQuote/);
+});
+
+test("review overview reads naturally and cites only accepted direct evidence", async () => {
+  const model=standardSequence();
+  const guide=await generateGuide({index:fakeIndex(),question:"Why are neural nets black boxes?",sendModel:model.sendModel});
+  assert.equal(guide.overviewSource,"reviewed");
+  assert.equal(guide.overview,"Neural networks are difficult to interpret because their behavior can be opaque.");
+  assert.doesNotMatch(guide.overview,/This excerpt|accountability/i);
+  assert.equal(model.calls,3);
+  assert.match(model.prompts[2],/overviewEvidenceIds/);
+});
+
+test("overview citing rejected or contextual passage falls back to direct source text", async () => {
+  const model=modelSequence(
+    {findings:[finding("p1-w0","direct"),finding("p2-w0","broader")]},
+    {overview:"Draft contains irrelevant material.",steps:[step("p1-w0","direct"),step("p2-w0","broader")]},
+    {reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"Defines opacity."},
+      {evidenceId:"p2-w0",decision:"reject",reason:"Not directly relevant."}],
+      directOverview:"Water consumption and corporate accountability are the main black-box issues.",
+      overviewEvidenceIds:["p2-w0"]}
+  );
+  const guide=await generateGuide({index:fakeIndex(),question:"black box",sendModel:model.sendModel});
+  assert.equal(guide.directCount,1);
+  assert.equal(guide.overviewSource,"source-excerpts");
+  assert.match(guide.overview,/Neural networks are opaque and difficult to explain/);
+  assert.doesNotMatch(guide.overview,/Water consumption|accountability/);
+});
+
+test("unpredictability alone is not direct evidence of interpretability", async () => {
+  const index=fakeIndex();
+  index.excerpts[1].text="Neural networks can be unreliable and unpredictable.";
+  const model=modelSequence(
+    {findings:[finding("p1-w0","direct"),finding("p2-w0","direct")]},
+    {overview:"",steps:[step("p1-w0","direct"),step("p2-w0","direct")]},
+    {reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"Opaque networks are hard to explain."},
+      {evidenceId:"p2-w0",decision:"direct",reason:"Unpredictability has indirect relevance."}],
+      directOverview:"The model is opaque and unpredictable.", overviewEvidenceIds:["p1-w0","p2-w0"]}
+  );
+  const guide=await generateGuide({index,question:"Why are neural nets black boxes?",sendModel:model.sendModel});
+  assert.equal(guide.directCount,1);
+  assert.equal(guide.broaderCount,0);
+  assert.equal(guide.rejectedCount,1);
+  assert.equal(guide.overviewSource,"source-excerpts");
+  assert.doesNotMatch(guide.overview,/unpredictable/);
+});
+
+test("unpredictability can appear only as qualified contextual example with verified bridge", async () => {
+  const index=fakeIndex();
+  index.excerpts[1].text="Neural networks can be unreliable and unpredictable.";
+  const model=modelSequence(
+    {findings:[finding("p1-w0","direct"),finding("p2-w0","direct")]},
+    {overview:"",steps:[step("p1-w0","direct"),step("p2-w0","direct")]},
+    {reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"Opaque networks are hard to explain."},
+      {evidenceId:"p2-w0",decision:"direct",reason:"A possible contextual illustration.",
+        bridgeQuote:"unreliable and unpredictable.",
+        link:"Unpredictability may motivate questions about the interpretability of model behavior."}]}
+  );
+  const guide=await generateGuide({index,question:"Why are neural nets black boxes?",sendModel:model.sendModel});
+  assert.equal(guide.directCount,1);
+  assert.equal(guide.broaderCount,1);
+  assert.match(guide.steps[1].explanation,/^Related context:/);
+  assert.equal(guide.steps[1].relevance,"broader");
 });

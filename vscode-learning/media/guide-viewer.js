@@ -39,7 +39,8 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     el("guideActiveTitle").textContent = label + " · PDF page " + item.page +
       (item.section ? " · " + item.section : "");
     el("guideActiveExplanation").textContent = exact ? "Context: " + item.context : item.explanation;
-    el("guideEvidenceRelation").textContent = exact ? "" : "Why this passage was selected: " + item.why;
+    el("guideEvidenceRelation").textContent = exact ? "" :
+      (item.relevance === "direct" ? "How this answers your question: " : "Contextual connection (not direct proof): ") + item.why;
     el("guideEvidenceReview").textContent = exact ? "" :
       "AI relevance review: " + item.reviewReason + " (" +
       (item.relevance === "direct" ? "direct evidence" : "broader connection") +
@@ -88,7 +89,7 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     el("guideBroaderSteps").hidden = true;
     el("guideBroaderSection").hidden = true;
     el("guideBroaderToggle").setAttribute("aria-expanded", "false");
-    el("guideBroaderToggle").textContent = "Show broader connections";
+    el("guideBroaderToggle").textContent = "Show contextual examples";
     el("guideReviewInfo").hidden = true;
     el("guideActive").hidden = true;
     el("guideRelated").hidden = true;
@@ -124,7 +125,7 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     guide.showBroader = !guide.showBroader;
     el("guideBroaderSteps").hidden = !guide.showBroader;
     el("guideBroaderToggle").setAttribute("aria-expanded", String(guide.showBroader));
-    el("guideBroaderToggle").textContent = guide.showBroader ? "Hide broader connections" : "Show broader connections";
+    el("guideBroaderToggle").textContent = guide.showBroader ? "Hide contextual examples" : "Show contextual examples";
     if (!guide.showBroader && guide.index >= guide.plan.directCount) {
       guide.index = -1;
       el("guideActive").hidden = true;
@@ -172,12 +173,12 @@ function setupGuidedUI({ host, el, overlay, stage }) {
           " (showing " + guide.plan.shownMatches + "). No Copilot requests."
         : "AI review: " + guide.plan.directCount + " direct, " + guide.plan.broaderCount +
           " optional broader, " + guide.plan.rejectedCount + " excluded.";
-      el("guideOverviewTitle").textContent = exact ? "Exact-wording search" : "Document overview";
-      el("guideListTitle").textContent = exact ? "Exact matches (click to highlight)" : "Direct evidence (AI-reviewed)";
+      el("guideOverviewTitle").textContent = exact ? "Exact-wording search" : "Answer from reviewed direct evidence";
+      el("guideListTitle").textContent = exact ? "Exact matches (click to highlight)" : "Direct explanations (AI-reviewed)";
       el("guideReviewInfo").hidden = exact;
       if (!exact) el("guideReviewInfo").textContent = guide.plan.directCount
-        ? "Only direct evidence is shown in the default tour. Other connections are optional. Classifications are AI judgments, not proof."
-        : "No direct evidence passed the AI review. Optional broader connections are hidden unless you choose to view them.";
+        ? "Direct passages explain the question; contextual examples discuss connected effects without establishing the explanation. Context stays optional. These are AI judgments, not independent proof."
+        : "No passage directly explained the question. Optional contextual examples are hidden unless you choose to view them.";
       el("guideBroaderSection").hidden = exact || guide.plan.broaderCount === 0;
       el("guideRelated").hidden = !exact;
       el("guidePlay").disabled = visibleCount() === 0;

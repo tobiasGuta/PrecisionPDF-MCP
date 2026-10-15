@@ -1,7 +1,7 @@
 "use strict";
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { focus, sourceAddressesTopic, groundedBridge } = require("../relevance");
+const { focus, sourceAddressesTopic, directlyExplainsTopic, groundedBridge } = require("../relevance");
 
 test("both singular and plural black-box questions identify the same focus", () => {
   assert.equal(focus("black box").type, "black-box");
@@ -60,4 +60,13 @@ test("broad questions are not turned into a brittle keyword rule", () => {
 test("named non-black-box topics use identifiable content anchors", () => {
   assert.equal(sourceAddressesTopic("Explain discrimination in AI", "Discriminatory systems can perpetuate bias."),true);
   assert.equal(sourceAddressesTopic("Explain discrimination in AI", "Data center water use is rising."),false);
+});
+
+test("unpredictability alone is contextual, not directly explanatory of black boxes",()=>{
+  assert.equal(sourceAddressesTopic("black box","Networks can be unreliable and unpredictable."),true);
+  assert.equal(directlyExplainsTopic("black box","Networks can be unreliable and unpredictable."),false);
+  assert.equal(directlyExplainsTopic("black box","They cannot explain exactly how a network will behave."),true);
+  assert.equal(directlyExplainsTopic("black boxes","The model's learned patterns are illegible to humans."),true);
+  assert.equal(directlyExplainsTopic("black box","This is what researchers mean by a black box."),true);
+  assert.equal(directlyExplainsTopic("black box","These systems have opaque internal representations."),true);
 });
