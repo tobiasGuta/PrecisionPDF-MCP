@@ -7,6 +7,7 @@ const { execFile } = require("node:child_process");
 const { randomBytes } = require("node:crypto");
 const { buildPrompt } = require("./prompt");
 const { TutorSession } = require("./session");
+const { attachGuidedReading } = require("./guided_controller");
 
 function resolveRepoPath() {
   const setting = vscode.workspace.getConfiguration("precisionpdfLearning").get("repositoryPath");
@@ -67,6 +68,7 @@ function makeHtml(context, webview) {
     .replaceAll("{{CSP}}", webview.cspSource)
     .replaceAll("{{CSS}}", uri("viewer.css"))
     .replaceAll("{{MARKDOWN_JS}}", uri("markdown.js"))
+    .replaceAll("{{GUIDE_JS}}", uri("guide-viewer.js"))
     .replaceAll("{{JS}}", uri("viewer.js"));
 }
 
@@ -93,12 +95,14 @@ async function openLearningMode(context) {
   let busy = false;
   let tokenSource = null;
   const session = new TutorSession();
+  let loadSerial = 0;
 
   const send = (message) => { void panel.webview.postMessage(message); };
   panel.onDidDispose(() => { if (tokenSource) tokenSource.cancel(); });
 
   const load = async (pageNumber) => {
     if (busy) return send({ type: "error", message: "Wait for the current explanation to finish." });
+    const requested = ++loadSerial;
     const n = Number(pageNumber);
     if (!Number.isSafeInteger(n) || n < 1 || (pageData && n > pageData.pages)) {
       send({ type: "error", message: "Page is outside the document." });
@@ -107,17 +111,22 @@ async function openLearningMode(context) {
     send({ type: "loading" });
     try {
       const loaded = await readPage(repo, picked.root, picked.filename, n);
+      if (requested !== loadSerial) return null;
       // A new page changes active evidence without clearing the discussion.
       session.setPage(loaded.page);
       pageData = loaded;
       send({ type: "page", data: loaded });
+      return loaded;
     } catch (error) {
       send({ type: "error", message: error.message });
     }
   };
 
+  const guided = attachGuidedReading({ vscode, repo, picked, send, load,
+    currentPage: () => pageData, panel, tutoringBusy: () => busy });
+
   const explain = async (request) => {
-    if (busy) return;
+    if (busy || guided.isWorking()) return;
     if (!pageData) return send({ type: "error", message: "Load a PDF page first." });
     const userQuestion = String(request.question || "").trim().slice(0, 1500);
     if (!userQuestion) return send({ type: "error", message: "Enter a question." });
@@ -164,6 +173,7 @@ async function openLearningMode(context) {
 
   panel.webview.onDidReceiveMessage((message) => {
     if (!message || typeof message !== "object") return;
+    if (guided.handle(message)) return;
     if (message.type === "ready") void load(1);
     if (message.type === "navigate") void load(message.page);
     if (message.type === "ask") void explain(message);

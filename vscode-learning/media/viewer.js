@@ -4,6 +4,7 @@ const host = acquireVsCodeApi();
 const el = (id) => document.getElementById(id);
 const stage = el("stage");
 const overlay = el("overlay");
+const guidedUI = globalThis.setupPrecisionPDFGuided({ host, el, overlay, stage });
 let page = null;
 let selectedStart = -1;
 let selectedEnd = -1;
@@ -72,6 +73,7 @@ function render(data) {
     fragment.appendChild(box);
   });
   overlay.appendChild(fragment);
+  guidedUI.onPage();
   // A previous page's passage must not be treated as evidence on this page.
   currentContext = "";
   resetSelection();
@@ -198,6 +200,7 @@ el("copy").addEventListener("click", () => {
 window.addEventListener("message", (event) => {
   const message = event.data;
   if (!message || typeof message !== "object") return;
+  if (guidedUI.onMessage(message)) return;
   if (message.type === "loading") {
     el("notice").textContent = "Loading page…";
     stage.hidden = true;

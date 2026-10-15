@@ -14,6 +14,7 @@ import sys
 import pymupdf
 
 from .core import AnnotationError, PDFWorkspace
+from .guided_index import file_sha256
 
 
 def read_learning_page(root: str, filename: str, number: int) -> dict:
@@ -46,6 +47,7 @@ def read_learning_page(root: str, filename: str, number: int) -> dict:
         text = page.get_text("text", sort=True)
         return {
             "file": str(path.relative_to(workspace.root)),
+            "sha256": file_sha256(path),
             "page": number,
             "pages": len(document),
             "width": width,

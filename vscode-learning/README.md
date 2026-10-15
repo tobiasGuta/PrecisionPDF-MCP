@@ -108,3 +108,30 @@ page 4, ask to compare the discussion to the current page, return to page 3,
 then choose New discussion. Verify the discussion persists on navigation and
 vanishes only after New discussion. The PDF text-selection logic remains
 unchanged and no document edits are performed by Learning Mode.
+
+## Guided Reading Mode (v0.4 experimental)
+
+Switch from **Manual tutoring** to **Guided Reading** in the same PDF reader.
+Ask "What are the main ideas of this PDF?" (or a different whole-document
+question) and select **Analyze PDF**. The reader indexes selectable text on
+all PDF pages locally first; after indexing it displays the exact estimated
+Copilot request count and asks for confirmation before sending anything to
+the model. Analysis selects identifiers tied to local word ranges, and a
+second model response arranges up to seven guided explanation steps. Each step
+opens the source page and temporarily highlights the matched words. Use
+**Previous**, **Next**, **Play** (12 seconds per step), or **Pause** to navigate.
+
+**Safety and scope:** no annotations or PDF writes. Workspace confinement,
+whole-file SHA-256 and exact word-range text checks guard visual highlights;
+if evidence is missing or changed, the highlight is refused. These checks
+verify **where the quote comes from**, not whether every AI interpretation is
+correct; always inspect the evidence. Extracted PDF text is untrusted model
+input, never executable instructions. The tool currently supports up to
+60 pages, 350,000 indexed characters, 1,600 excerpts and 30 analysis
+batches (plus one final synthesis request). Over-limit documents fail
+without a partial "whole-PDF" summary. Scanned, encrypted, rotated and
+unusually laid out PDFs may need preprocessing. No OCR is performed.
+
+This remains experimental and separate from the manual tutor conversation.
+Model-generated summaries aren't persisted. The full real VS Code/Copilot
+integration requires an Extension Development Host test on Fedora.
