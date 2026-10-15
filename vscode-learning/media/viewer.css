@@ -32,3 +32,22 @@ textarea { width: 100%; padding: 10px; resize: vertical; min-height: 94px; color
 textarea:focus-visible, button:focus-visible { outline: 2px solid var(--vscode-focusBorder); }
 .answer { white-space: pre-wrap; line-height: 1.65; font-size: 13px; overflow-wrap: anywhere; padding: 14px; background: var(--vscode-textBlockQuote-background); border-left: 2px solid var(--vscode-focusBorder); min-height: 90px; }
 @media(max-width: 750px) { main { grid-template-columns: 1fr; height: auto; overflow: auto; } .reader { min-height: 370px; max-height: 65vh; } .tutor { border-left: none; border-top: 1px solid var(--vscode-panel-border); } }
+.tutor-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.tutor-heading h2 { margin: 2px 0; }
+.thread { display: flex; flex-direction: column; gap: 15px; min-height: 30px; }
+.turn { background: var(--vscode-editorWidget-background, var(--vscode-textBlockQuote-background)); border: 1px solid var(--vscode-panel-border); padding: 14px; border-radius: 8px; }
+.turn-label { font-size: 11px; color: var(--vscode-descriptionForeground); font-weight: 600; margin-bottom: 6px; }
+.turn-question { font-size: 13px; font-weight: 600; margin: 0 0 8px; white-space: pre-wrap; }
+.turn-source { font-size: 11px; color: var(--vscode-descriptionForeground); margin: 0 0 13px; overflow-wrap: anywhere; }
+.tutor-label { margin: 10px 0; color: var(--vscode-foreground); }
+.turn-answer { line-height: 1.65; font-size: 13px; overflow-wrap: anywhere; }
+.turn-answer h3, .turn-answer h4, .turn-answer h5 { font-size: 13px; line-height: 1.4; margin: 16px 0 7px; }
+.turn-answer p { font-size: 13px; margin: 6px 0 10px; }
+.turn-answer ul, .turn-answer ol { padding-left: 22px; margin: 7px 0 12px; }
+.turn-answer li { margin-bottom: 5px; }
+.turn-answer pre { background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background)); padding: 10px; overflow-x: auto; border-radius: 5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.turn-answer code { font-family: var(--vscode-editor-font-family, monospace); background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background)); padding: 1px 3px; border-radius: 3px; }
+.turn-answer pre code { background: transparent; padding: 0; }
+.turn-answer blockquote { margin: 8px 0; padding: 4px 12px; border-left: 2px solid var(--vscode-textBlockQuote-border); color: var(--vscode-descriptionForeground); }
+.turn-answer .inline-math, .turn-answer .display-math { font-family: var(--vscode-editor-font-family, monospace); }
+.turn-answer .error { color: var(--vscode-errorForeground); }

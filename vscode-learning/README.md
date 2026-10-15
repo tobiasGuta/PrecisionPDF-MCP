@@ -51,3 +51,21 @@ webview, word selection, and actual Copilot access.
   Review document privacy requirements before using cloud models.
 - No outbound network calls are made by PrecisionPDF's Python bridge itself.
 - No model requests happen automatically while navigating the PDF.
+
+## Tutor discussions and formatted explanations (v0.2 experiment)
+
+- Ask a question about selected PDF text, then ask another question without
+  reselecting to continue discussing the same passage. The conversation shows
+  previous questions and answers until you change to a different passage,
+  navigate to a different page, or click **New discussion**.
+- The extension retains only the latest three bounded question/answer turns in
+  memory for the model. Discussions are not saved to disk.
+- Copilot Markdown responses display headings, lists, basic emphasis, code
+  blocks, quotations, and plain-text math notation. This is a deliberately
+  minimal offline formatter, **not** a TeX math typesetter or general Markdown
+  renderer. Raw HTML and unsafe external links are not interpreted.
+- Original PDF selection, rendering, and highlighting behavior remain
+  unchanged. The Learning Mode interface remains read-only.
+- Run `npm --prefix vscode-learning test` at the repository root to execute
+  tests for formatting and discussion history. Verify the UI and Copilot flow
+  manually in the VS Code Extension Development Host.

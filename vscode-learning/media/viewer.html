@@ -26,21 +26,26 @@
       </div>
     </section>
     <aside class="tutor" aria-label="AI learning assistant">
-      <h2>Understand what you're reading</h2>
-      <p class="hint">Drag across a passage in the PDF. Then ask a question about it, or ask about the whole page.</p>
+      <div class="tutor-heading">
+        <h2>Understand what you're reading</h2>
+        <button id="newThread" title="Clear tutor history and start a new discussion">New discussion</button>
+      </div>
+      <p class="hint">Drag across a passage, then ask what it means. Follow-up questions keep the same context until you change pages, select a different passage, or start a new discussion.</p>
       <label>Selected passage</label>
       <div id="selection" class="selection">No text selected. Questions will use the current page.</div>
       <label for="question">Your question</label>
-      <textarea id="question" rows="4" placeholder="What does the author mean by this?">Explain this passage simply, with a practical example.</textarea>
+      <textarea id="question" rows="3" placeholder="Why does the author say that?">Explain this passage simply, with a practical example.</textarea>
       <div class="actions">
         <button id="ask" class="primary">Ask with Copilot</button>
         <button id="copy" title="Paste into any chat client, including Codex or Antigravity">Copy prompt</button>
       </div>
-      <p class="privacy">Model requests use your signed-in GitHub Copilot plan and its limits. Selected text and page context are sent only after you click Ask. No separate API key is required.</p>
-      <h3>Explanation</h3>
-      <div id="answer" class="answer" aria-live="polite">Your explanation will appear here.</div>
+      <p class="privacy">Uses your existing GitHub Copilot model access and plan limits. Passage and page context are sent only when you click Ask; no separate API key required.</p>
+      <h3>Discussion</h3>
+      <p id="threadStatus" class="hint" aria-live="polite">Select a passage and ask your first question.</p>
+      <div id="thread" class="thread" aria-live="polite" aria-label="Tutor discussion"></div>
     </aside>
   </main>
+  <script nonce="{{NONCE}}" src="{{MARKDOWN_JS}}"></script>
   <script nonce="{{NONCE}}" src="{{JS}}"></script>
 </body>
 </html>

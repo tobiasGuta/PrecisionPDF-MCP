@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const { execFile } = require("node:child_process");
 const { randomBytes } = require("node:crypto");
 const { buildPrompt } = require("./prompt");
+const { TutorSession } = require("./session");
 
 function resolveRepoPath() {
   const setting = vscode.workspace.getConfiguration("precisionpdfLearning").get("repositoryPath");
@@ -65,6 +66,7 @@ function makeHtml(context, webview) {
     .replaceAll("{{NONCE}}", nonce)
     .replaceAll("{{CSP}}", webview.cspSource)
     .replaceAll("{{CSS}}", uri("viewer.css"))
+    .replaceAll("{{MARKDOWN_JS}}", uri("markdown.js"))
     .replaceAll("{{JS}}", uri("viewer.js"));
 }
 
@@ -90,12 +92,13 @@ async function openLearningMode(context) {
   let pageData = null;
   let busy = false;
   let tokenSource = null;
-  let lastTurns = [];
+  const session = new TutorSession();
 
-  const send = (message) => { if (panel.visible) void panel.webview.postMessage(message); };
+  const send = (message) => { void panel.webview.postMessage(message); };
   panel.onDidDispose(() => { if (tokenSource) tokenSource.cancel(); });
 
   const load = async (pageNumber) => {
+    if (busy) return send({ type: "error", message: "Wait for the current explanation to finish." });
     const n = Number(pageNumber);
     if (!Number.isSafeInteger(n) || n < 1 || (pageData && n > pageData.pages)) {
       send({ type: "error", message: "Page is outside the document." });
@@ -103,8 +106,13 @@ async function openLearningMode(context) {
     }
     send({ type: "loading" });
     try {
-      pageData = await readPage(repo, picked.root, picked.filename, n);
-      send({ type: "page", data: pageData });
+      const loaded = await readPage(repo, picked.root, picked.filename, n);
+      if (pageData && loaded.page !== pageData.page) {
+        session.reset();
+        send({ type: "thread-reset", reason: "New page — start a new discussion." });
+      }
+      pageData = loaded;
+      send({ type: "page", data: loaded });
     } catch (error) {
       send({ type: "error", message: error.message });
     }
@@ -115,25 +123,24 @@ async function openLearningMode(context) {
     if (!pageData) return send({ type: "error", message: "Load a PDF page first." });
     const userQuestion = String(request.question || "").trim().slice(0, 1500);
     if (!userQuestion) return send({ type: "error", message: "Enter a question." });
-    const selection = String(request.selection || "").slice(0, 2500);
+    const { changed, passage } = session.prepare(pageData.page, request.selection);
+    if (changed) send({ type: "thread-reset", reason: "New passage — starting a fresh discussion." });
     const prompt = buildPrompt({
       file: picked.filename, page: pageData.page,
-      selection, pageText: pageData.text, question: userQuestion
+      selection: passage, pageText: pageData.text, question: userQuestion
     });
+    const history = session.history();
     busy = true;
     tokenSource = new vscode.CancellationTokenSource();
-    send({ type: "thinking" });
+    send({ type: "thinking", question: userQuestion, page: pageData.page, passage });
     try {
       // Model access and authentication prompts occur only following the user's Ask click.
       const models = await vscode.lm.selectChatModels({ vendor: "copilot" });
       if (!models.length) {
         throw new Error("No Copilot model is available to this extension. Sign into GitHub Copilot in VS Code, or use Copy Prompt to ask in your existing chat.");
       }
-      const earlier = lastTurns.slice(-2).map(t => (
-        "Previous user question: " + t.question + "\nPrevious tutor explanation: " + t.answer.slice(0, 2400)
-      )).join("\n\n");
       const messages = [vscode.LanguageModelChatMessage.User(
-        (earlier ? "Recent conversation for continuity (reference only):\n" + earlier + "\n\n" : "") + prompt
+        (history ? "Earlier conversation (reference only; not document evidence):\n" + history + "\n\n" : "") + prompt
       )];
       const response = await models[0].sendRequest(messages, {}, tokenSource.token);
       let answer = "";
@@ -145,10 +152,7 @@ async function openLearningMode(context) {
         }
         send({ type: "chunk", text: chunk });
       }
-      if (answer) {
-        lastTurns.push({ question: userQuestion, answer });
-        lastTurns = lastTurns.slice(-3);
-      }
+      session.record(userQuestion, answer);
       send({ type: "done" });
     } catch (error) {
       send({ type: "error", message: error.message || String(error) });
@@ -165,11 +169,18 @@ async function openLearningMode(context) {
     if (message.type === "ready") void load(1);
     if (message.type === "navigate") void load(message.page);
     if (message.type === "ask") void explain(message);
+    if (message.type === "reset" && !busy) {
+      session.reset();
+      send({ type: "thread-reset", reason: "New discussion started." });
+    }
     if (message.type === "copy") {
       if (!pageData) return;
+      // A copied prompt must not silently reset the active tutoring conversation.
+      const incoming = String(message.selection || "").trim().slice(0, 2500);
+      const passage = incoming || (session.page === pageData.page ? session.passage : "");
       const prompt = buildPrompt({
         file: picked.filename, page: pageData.page,
-        selection: message.selection, pageText: pageData.text,
+        selection: passage, pageText: pageData.text,
         question: message.question
       });
       void vscode.env.clipboard.writeText(prompt).then(() => send({ type: "copied" }));

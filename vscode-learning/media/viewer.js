@@ -9,6 +9,8 @@ let selectedStart = -1;
 let selectedEnd = -1;
 let dragging = false;
 let answering = false;
+let answerText = "";
+let activeAnswer = null;
 
 function selectionText() {
   if (!page || selectedStart < 0 || selectedEnd < 0) return "";
@@ -25,7 +27,7 @@ function drawSelection() {
     node.classList.toggle("selected", min >= 0 && idx >= min && idx <= max);
   });
   el("selection").textContent = selectionText() ||
-    "No text selected. Questions will use the current page.";
+    "No text selected. Follow-ups stay connected to the previous passage until you start a new discussion.";
 }
 
 function resetSelection() {
@@ -84,28 +86,70 @@ window.addEventListener("pointerup", () => { dragging = false; });
 window.addEventListener("blur", () => { dragging = false; });
 
 function navigate(delta) {
-  if (!page) return;
+  if (!page || answering) return;
   const next = page.page + delta;
   if (next >= 1 && next <= page.pages) host.postMessage({ type: "navigate", page: next });
+}
+
+function clearThread(reason) {
+  el("thread").replaceChildren();
+  answerText = "";
+  activeAnswer = null;
+  el("threadStatus").textContent = reason || "Select a passage and ask your first question.";
+}
+
+function beginTurn(message) {
+  const card = document.createElement("article");
+  card.className = "turn";
+  const label = document.createElement("div");
+  label.className = "turn-label";
+  label.textContent = "You · page " + message.page;
+  const question = document.createElement("p");
+  question.className = "turn-question";
+  question.textContent = message.question;
+  const evidence = document.createElement("p");
+  evidence.className = "turn-source";
+  evidence.textContent = message.passage ?
+    "Passage: “" + message.passage.slice(0, 160) + (message.passage.length > 160 ? "…" : "") + "”" :
+    "Using page context";
+  const answerLabel = document.createElement("div");
+  answerLabel.className = "turn-label tutor-label";
+  answerLabel.textContent = "Copilot";
+  const answer = document.createElement("div");
+  answer.className = "turn-answer";
+  answer.textContent = "Thinking…";
+  card.append(label, question, evidence, answerLabel, answer);
+  el("thread").appendChild(card);
+  el("threadStatus").textContent = "Discussion — follow-up questions will retain this passage.";
+  activeAnswer = answer;
+  answerText = "";
+  card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+// Do not re-render the entire page while streaming a response.
+function updateAnswer() {
+  if (activeAnswer) globalThis.PrecisionPDFMarkdown.renderMarkdown(activeAnswer, answerText);
 }
 
 el("prev").addEventListener("click", () => navigate(-1));
 el("next").addEventListener("click", () => navigate(1));
 el("clear").addEventListener("click", resetSelection);
+el("newThread").addEventListener("click", () => {
+  if (answering) return;
+  resetSelection();
+  host.postMessage({ type: "reset" });
+});
 el("ask").addEventListener("click", () => {
   if (!page || answering) return;
+  const question = el("question").value.trim();
+  if (!question) { el("threadStatus").textContent = "Enter a question first."; return; }
   answering = true;
   el("ask").disabled = true;
-  el("answer").textContent = "";
-  host.postMessage({
-    type: "ask", selection: selectionText(), question: el("question").value
-  });
+  host.postMessage({ type: "ask", selection: selectionText(), question });
 });
 el("copy").addEventListener("click", () => {
   if (!page) return;
-  host.postMessage({
-    type: "copy", selection: selectionText(), question: el("question").value
-  });
+  host.postMessage({ type: "copy", selection: selectionText(), question: el("question").value });
 });
 
 window.addEventListener("message", (event) => {
@@ -116,21 +160,32 @@ window.addEventListener("message", (event) => {
     stage.hidden = true;
   } else if (message.type === "page") {
     render(message.data);
+  } else if (message.type === "thread-reset") {
+    clearThread(message.reason);
   } else if (message.type === "thinking") {
-    el("answer").textContent = "Asking Copilot…\n";
+    beginTurn(message);
   } else if (message.type === "chunk") {
-    if (el("answer").textContent === "Asking Copilot…\n") el("answer").textContent = "";
-    el("answer").textContent += message.text;
+    answerText += String(message.text || "");
+    updateAnswer();
   } else if (message.type === "done") {
+    if (activeAnswer && !answerText) activeAnswer.textContent = "No explanation was returned.";
     answering = false;
     el("ask").disabled = false;
+    el("question").value = "";
   } else if (message.type === "error") {
     el("notice").textContent = message.message;
-    el("answer").textContent += "\n" + message.message;
+    if (activeAnswer) {
+      const error = document.createElement("p");
+      error.className = "error";
+      error.textContent = message.message;
+      activeAnswer.appendChild(error);
+    } else {
+      el("threadStatus").textContent = message.message;
+    }
     answering = false;
     el("ask").disabled = false;
   } else if (message.type === "copied") {
-    el("answer").textContent = "Prompt copied. Paste it into your existing chat client.";
+    el("threadStatus").textContent = "Prompt copied. Paste it into your existing chat client.";
   }
 });
 
