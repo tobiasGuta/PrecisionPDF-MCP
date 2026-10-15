@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src {{CSP}} 'unsafe-inline'; script-src 'nonce-{{NONCE}}';">
+  <title>PrecisionPDF Learning Mode</title>
+  <link rel="stylesheet" href="{{CSS}}">
+</head>
+<body>
+  <header>
+    <div class="heading"><strong>PrecisionPDF</strong><span>Learning Mode · read only</span></div>
+    <div class="nav">
+      <button id="prev" title="Previous page">←</button>
+      <span id="pages">Loading…</span>
+      <button id="next" title="Next page">→</button>
+      <button id="clear" title="Clear selected passage">Clear selection</button>
+    </div>
+  </header>
+  <main>
+    <section class="reader" aria-label="PDF reader">
+      <div id="notice">Loading your PDF…</div>
+      <div id="stage" hidden>
+        <img id="pageImage" draggable="false" alt="Rendered PDF page">
+        <div id="overlay" aria-label="Select a passage by dragging across PDF words"></div>
+      </div>
+    </section>
+    <aside class="tutor" aria-label="AI learning assistant">
+      <h2>Understand what you're reading</h2>
+      <p class="hint">Drag across a passage in the PDF. Then ask a question about it, or ask about the whole page.</p>
+      <label>Selected passage</label>
+      <div id="selection" class="selection">No text selected. Questions will use the current page.</div>
+      <label for="question">Your question</label>
+      <textarea id="question" rows="4" placeholder="What does the author mean by this?">Explain this passage simply, with a practical example.</textarea>
+      <div class="actions">
+        <button id="ask" class="primary">Ask with Copilot</button>
+        <button id="copy" title="Paste into any chat client, including Codex or Antigravity">Copy prompt</button>
+      </div>
+      <p class="privacy">Model requests use your signed-in GitHub Copilot plan and its limits. Selected text and page context are sent only after you click Ask. No separate API key is required.</p>
+      <h3>Explanation</h3>
+      <div id="answer" class="answer" aria-live="polite">Your explanation will appear here.</div>
+    </aside>
+  </main>
+  <script nonce="{{NONCE}}" src="{{JS}}"></script>
+</body>
+</html>

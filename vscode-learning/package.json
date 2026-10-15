@@ -1,0 +1,45 @@
+{
+  "name": "precisionpdf-learning",
+  "displayName": "PrecisionPDF Learning Mode",
+  "description": "Local PDF reading and optional Copilot-powered explanations for PrecisionPDF-MCP",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.98.0"
+  },
+  "categories": [
+    "Education",
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:precisionpdfLearning.open"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "precisionpdfLearning.open",
+        "title": "PrecisionPDF: Open Learning Mode"
+      }
+    ],
+    "configuration": {
+      "title": "PrecisionPDF Learning Mode",
+      "properties": {
+        "precisionpdfLearning.repositoryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Full path to PrecisionPDF-MCP repository; defaults to the parent of the extension development folder."
+        },
+        "precisionpdfLearning.uvPath": {
+          "type": "string",
+          "default": "uv",
+          "description": "Path to the uv executable on Fedora or another system."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}
