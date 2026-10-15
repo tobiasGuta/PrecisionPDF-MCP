@@ -32,8 +32,12 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     const item = guide.plan.steps[guide.index];
     el("guideActive").hidden = false;
     const exact = guide.plan.type === "exact";
-    el("guideActiveTitle").textContent = (exact ? "Match " : "Step ") + (guide.index + 1) +
-      " of " + guide.plan.steps.length + " · PDF page " + item.page + (item.section ? " · " + item.section : "");
+    const label = exact ? "Match " + (guide.index + 1) + " of " + guide.plan.steps.length
+      : item.relevance === "broader"
+        ? "Broader connection " + (guide.index - guide.plan.directCount + 1) + " of " + guide.plan.broaderCount
+        : "Direct evidence " + (guide.index + 1) + " of " + guide.plan.directCount;
+    el("guideActiveTitle").textContent = label + " · PDF page " + item.page +
+      (item.section ? " · " + item.section : "");
     el("guideActiveExplanation").textContent = exact ? "Context: " + item.context : item.explanation;
     el("guideEvidenceRelation").textContent = exact ? "" : "Why this passage was selected: " + item.why;
     el("guideEvidenceReview").textContent = exact ? "" :
@@ -190,7 +194,10 @@ function setupGuidedUI({ host, el, overlay, stage }) {
         const button = document.createElement("button");
         button.className = "guide-step";
         button.dataset.index = String(number);
-        button.textContent = (exact ? "Match " : "Step ") + (number + 1) + " · Page " + item.page +
+        const label = exact ? "Match " + (number + 1)
+          : number < directCount ? "Direct evidence " + (number + 1)
+            : "Broader connection " + (number - directCount + 1);
+        button.textContent = label + " · Page " + item.page +
           (item.section ? " · " + item.section : "") + " — " +
           (exact ? item.quote.slice(0, 160) : item.explanation.slice(0, 115));
         button.addEventListener("click", () => { pause(); go(number); });

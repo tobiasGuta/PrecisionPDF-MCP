@@ -44,8 +44,21 @@ function resolveQuery(question, approach = "auto") {
     return { kind: "exact", phrase };
   }
   const hasLocationIntent = /\b(?:where|which\s+pages?|what\s+pages?|find|locate|mentions?|occurrences?|instances?|appears?|search)\b/i.test(text);
-  return (hasLocationIntent && phrase)
-    ? { kind: "exact", phrase }
+  if (hasLocationIntent && phrase) return { kind: "exact", phrase };
+  // A quoted phrase by itself is an explicit literal-search request.
+  if (/^(?:"[^"]+"|“[^”]+”|'[^']+')$/.test(text) && phrase) {
+    return { kind: "exact", phrase };
+  }
+  // A bare search term should behave like Ctrl+F rather than uploading the
+  // whole document to a model. Only a short noun-like phrase qualifies;
+  // questions and explanatory commands keep the Copilot path.
+  const bare = text.replace(/[?.!]+$/g, "").trim();
+  const words = bare.split(/\s+/);
+  const isPlainPhrase = words.length >= 1 && words.length <= 4 &&
+    bare.length <= 80 && /^[\p{L}\p{N}][\p{L}\p{N}\s-]*$/u.test(bare) &&
+    !/\b(?:explain|explaining|summarize|summary|overview|describe|compare|tell|show|why|what|where|when|how|who|which|can|could|should|would|please|find|locate|search|mention|discuss|main|ideas|all)\b/i.test(bare);
+  return isPlainPhrase
+    ? { kind: "exact", phrase: bare }
     : { kind: "guided", phrase: "" };
 }
 

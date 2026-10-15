@@ -140,3 +140,27 @@ test("existing playback still uses a 12-second step interval", () => {
   const code=fs.readFileSync(path.join(__dirname,"../media/guide-viewer.js"),"utf8");
   assert.match(code,/setTimeout\(\(\) => go\(guide.index \+ 1\), 12000\)/);
 });
+
+test("active headings count direct and broader evidence separately", () => {
+  const {el,viewer}=createUI();
+  const plan=guidePlan(2,3);
+  viewer.onMessage({type:"guide-plan",plan});
+  viewer.onMessage({type:"guide-activate",number:0,step:plan.steps[0]});
+  assert.match(el("guideActiveTitle").textContent,/Direct evidence 1 of 2 · PDF page 1/);
+  assert.match(el("guideSteps").children[1].textContent,/Direct evidence 2 · Page 1/);
+  assert.doesNotMatch(el("guideActiveTitle").textContent,/1 of 5/);
+  el("guideBroaderToggle").click();
+  viewer.onMessage({type:"guide-activate",number:2,step:plan.steps[2]});
+  assert.match(el("guideActiveTitle").textContent,/Broader connection 1 of 3/);
+  assert.match(el("guideBroaderSteps").children[0].textContent,/Broader connection 1 · Page 1/);
+});
+
+test("a guide with zero broader connections has no optional section", () => {
+  const {el,viewer}=createUI();
+  const plan=guidePlan(2,0);
+  viewer.onMessage({type:"guide-plan",plan});
+  assert.equal(el("guideBroaderSection").hidden,true);
+  assert.equal(el("guideSteps").children.length,2);
+  viewer.onMessage({type:"guide-activate",number:1,step:plan.steps[1]});
+  assert.match(el("guideActiveTitle").textContent,/Direct evidence 2 of 2/);
+});

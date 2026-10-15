@@ -216,3 +216,37 @@ follows from the source. Exact wording searches are still entirely local,
 exhaustive within the supported full document, and require zero Copilot
 requests. The Play/Pause cadence remains 12 seconds per step; manual tutoring,
 PDF annotations, and original documents are unchanged.
+
+## Focused relevance and accurate counters (v0.6.1 experimental)
+
+For focused Copilot questions such as **black box**, candidate passages must
+also satisfy a conservative local topicality check. It accepts a few explicit
+interpretability-related expressions, but rejects loosely related AI-industry,
+energy, climate or water paragraphs. This deterministic lexical check can
+exclude some genuine paraphrases; it is a conservative filter, **not a
+semantic-proof system**. Broader evidence additionally requires a reviewer-
+supplied exact quotation fragment (verified against the source) and a
+substantive connection to the requested concept. Missing, contradictory,
+or off-topic connections are rejected. **Zero broader connections is valid**,
+and no minimum number of items is forced.
+
+The main tour shows **Direct evidence 1 of N** and optional context shows
+**Broader connection 1 of M** with separate counters. Any accepted broader
+description is rewritten from the reviewer's qualified, contextual link,
+rather than reusing an AI draft that might claim to directly answer.
+The source coordinates and SHA-256 checks are unchanged. An exact search
+still makes zero Copilot calls.
+
+In Automatic mode, entering a short bare term like `black box` or `AI
+safety` is interpreted as a local exact-phrase search. Explicit questions
+(e.g. `Explain the black-box problem`) remain Copilot-guided. Quoted
+phrases alone are also exact searches, and the dropdown always overrides
+routing. No new API calls are added beyond the existing candidate,
+synthesis and relevance-review stages. The guided playback delay remains
+12 seconds; manual tutoring and all PDF-writing MCP tools are untouched.
+
+Validation: run `npm --prefix vscode-learning test` and
+`uv run pytest -q` on Fedora, followed by the Extension Development Host.
+Repeat a guided interpretability question and confirm environmental water
+and data-center passages are excluded or the answer is conservatively
+shorter; inspect actual source passages before trusting the labels.

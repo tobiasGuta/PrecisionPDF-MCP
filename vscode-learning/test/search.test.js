@@ -84,3 +84,22 @@ test("model-upload path is separate from exact local search", () => {
   assert.match(controller,/findExactMentions\(index, route\.phrase\)/);
   assert.match(controller,/message\.type === "guideRelated"/);
 });
+
+test("short bare phrases and quoted phrases run exact local search in Automatic mode", () => {
+  for (const input of ["black box", "black boxes", '"black box"', "model opacity", "AI safety"]) {
+    assert.equal(resolveQuery(input).kind,"exact",input);
+  }
+  assert.deepEqual(resolveQuery("black box"),{kind:"exact",phrase:"black box"});
+  assert.deepEqual(resolveQuery('"black box"'),{kind:"exact",phrase:"black box"});
+  assert.deepEqual(resolveQuery("black box","guided"),{kind:"guided",phrase:""});
+});
+
+test("questions and explanation commands are not silently routed to literal search", () => {
+  for (const input of [
+    "Explain the black-box problem", "Why are models difficult to interpret?",
+    "What are the main ideas of this PDF?", "Describe opacity in neural networks",
+    "How does this connect to safety?", "Where does it discuss safety?"
+  ]) {
+    assert.equal(resolveQuery(input).kind,"guided",input);
+  }
+});

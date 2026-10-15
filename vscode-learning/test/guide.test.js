@@ -9,7 +9,7 @@ function fakeIndex() {
       { id: "p1-w0", page: 1, start_word: 0, end_word: 7,
         text: "Neural networks are opaque and difficult to explain.", boundary: "sentence", section: "Interpretability" },
       { id: "p2-w0", page: 2, start_word: 0, end_word: 4,
-        text: "Technology companies face increasing public scrutiny.", boundary: "sentence", section: "Governance" }
+        text: "Opacity raises important accountability concerns.", boundary: "sentence", section: "Governance" }
     ] };
 }
 function finding(id, relevance, idea = "relevant") {
@@ -35,7 +35,9 @@ function standardSequence() {
       steps: [step("p1-w0","direct","Neural networks are difficult to interpret."),
         step("p2-w0","broader","Companies face accountability questions.")] },
     { reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"Specifically discusses opacity."},
-      {evidenceId:"p2-w0",decision:"broader",reason:"Accountability is related context, not interpretability itself."}] }
+      {evidenceId:"p2-w0",decision:"broader",reason:"Accountability is a downstream concern of opacity.",
+        bridgeQuote:"Opacity raises important accountability concerns.",
+        link:"Opacity and model interpretability create accountability concerns in deployments."}] }
   );
 }
 
@@ -78,16 +80,18 @@ test("reviewed guide keeps directly supported steps first and broader steps opti
   assert.doesNotMatch(result.overview,/accountability|Raw summary/i);
   assert.equal(result.steps[0].quote,fakeIndex().excerpts[0].text);
   assert.match(model.prompts[0],/Direct means this excerpt addresses/);
-  assert.match(model.prompts[1],/Broader connections are optional/);
+  assert.match(model.prompts[1],/Broader connections require specific evidence-based links/);
   assert.match(model.prompts[2],/skeptical EVIDENCE REVIEWER/);
 });
 test("a skeptical review may downgrade an apparent direct claim", async () => {
   const model=modelSequence(
     { findings:[finding("p1-w0","direct")] },
     { overview:"",steps:[step("p1-w0","direct")] },
-    { reviews:[{evidenceId:"p1-w0",decision:"broader",reason:"Only indirect support."}] }
+    { reviews:[{evidenceId:"p1-w0",decision:"broader",reason:"It offers context on explainability.",
+       bridgeQuote:"Neural networks are opaque and difficult to explain.",
+       link:"The opacity of neural networks is broader context for why model behavior can be unclear."}] }
   );
-  const result=await generateGuide({index:fakeIndex(),question:"Explain the problem.",sendModel:model.sendModel});
+  const result=await generateGuide({index:fakeIndex(),question:"Why are neural nets black boxes?",sendModel:model.sendModel});
   assert.equal(result.directCount,0);
   assert.equal(result.broaderCount,1);
   assert.match(result.overview,/No directly supported answer/);
@@ -97,9 +101,11 @@ test("neither synthesis nor reviewer can upgrade candidate broader evidence", as
   const model=modelSequence(
     { findings:[finding("p2-w0","broader")] },
     { overview:"",steps:[step("p2-w0","direct")] },
-    { reviews:[{evidenceId:"p2-w0",decision:"direct",reason:"I think this is direct."}] }
+    { reviews:[{evidenceId:"p2-w0",decision:"direct",reason:"Interpretability concern is contextual.",
+       bridgeQuote:"Opacity raises important accountability concerns.",
+       link:"Opacity and interpretability connect to accountability risks as contextual consequences."}] }
   );
-  const result=await generateGuide({index:fakeIndex(),question:"Explain interpretability.",sendModel:model.sendModel});
+  const result=await generateGuide({index:fakeIndex(),question:"Why are neural nets black boxes?",sendModel:model.sendModel});
   assert.equal(result.directCount,0);
   assert.equal(result.steps[0].relevance,"broader");
 });
@@ -158,7 +164,7 @@ test("invalid or missing review structure fails without relying on false certain
 });
 test("different PDF reading sections pass through into reviewed evidence", async () => {
   const model=standardSequence();
-  const result=await generateGuide({index:fakeIndex(),question:"Compare readings.",sendModel:model.sendModel});
+  const result=await generateGuide({index:fakeIndex(),question:"Why are neural nets black boxes?",sendModel:model.sendModel});
   assert.deepEqual(result.steps.map(x=>x.section),["Interpretability","Governance"]);
   assert.deepEqual(result.steps.map(x=>x.boundary),["sentence","sentence"]);
   assert.match(model.prompts[1],/independent readings/);
@@ -171,4 +177,75 @@ test("the reviewer sees exact quotes and is explicitly told to reject topic drif
   assert.match(prompt,/EVIDENCE REVIEWER/);
   assert.match(candidatePrompt("test","p1-w0: source",1,1),/Do not fill a quota/);
   assert.match(synthesisPrompt("test",[],3),/fewer is better/);
+});
+
+test("focused query excludes off-topic environmental passages before synthesis", async () => {
+  const idx=fakeIndex();
+  idx.excerpts[1].text="Data centers consume massive water resources.";
+  const model=modelSequence(
+    {findings:[finding("p1-w0","direct","opacity"),finding("p2-w0","broader","water consumption")]},
+    {overview:"Two themes",steps:[step("p1-w0","direct","Opacity can make systems difficult to explain.")]},
+    {reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"The quote states the networks are opaque."}]}
+  );
+  const guide=await generateGuide({index:idx,question:"What is the black box problem?",sendModel:model.sendModel});
+  assert.equal(guide.directCount,1);
+  assert.equal(guide.broaderCount,0);
+  assert.equal(guide.rejectedCount,1);
+  assert.doesNotMatch(JSON.stringify(guide),/water consumption|Data centers/);
+  assert.doesNotMatch(model.prompts[1],/Data centers/);
+});
+
+test("zero broader connections is a valid result", async () => {
+  const model=modelSequence(
+    {findings:[finding("p1-w0","direct","opacity")]},
+    {overview:"Opacity",steps:[step("p1-w0","direct","Networks are opaque.")]},
+    {reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"Source defines opacity."}]}
+  );
+  const result=await generateGuide({index:fakeIndex(),question:"black box",sendModel:model.sendModel});
+  assert.equal(result.directCount,1);
+  assert.equal(result.broaderCount,0);
+  assert.equal(result.steps.length,1);
+});
+
+test("reject broader claims without an exact source quote and specific semantic bridge", async () => {
+  const model=modelSequence(
+    {findings:[finding("p1-w0","direct","opacity"),finding("p2-w0","broader","accountability")]},
+    {overview:"",steps:[step("p1-w0","direct"),step("p2-w0","broader")]},
+    {reviews:[
+      {evidenceId:"p1-w0",decision:"direct",reason:"Clear evidence."},
+      {evidenceId:"p2-w0",decision:"broader",reason:"Related to opacity.",
+       bridgeQuote:"Nonexistent invented sentence",
+       link:"Opacity is a source of accountability questions in interpretability."}
+    ]}
+  );
+  const result=await generateGuide({index:fakeIndex(),question:"black box",sendModel:model.sendModel});
+  assert.equal(result.directCount,1);
+  assert.equal(result.broaderCount,0);
+  assert.equal(result.rejectedCount,1);
+});
+
+test("broader reviewer cannot describe a passage as directly answering the question", async () => {
+  const model=modelSequence(
+    {findings:[finding("p1-w0","direct","opacity"),finding("p2-w0","broader","accountability")]},
+    {overview:"",steps:[step("p1-w0","direct"),step("p2-w0","broader","This directly answers the question.")]},
+    {reviews:[
+      {evidenceId:"p1-w0",decision:"direct",reason:"Relevant evidence."},
+      {evidenceId:"p2-w0",decision:"broader",reason:"This directly answers the question.",
+       bridgeQuote:"Opacity raises important accountability concerns.",
+       link:"Opacity and interpretability are linked with accountability concerns."}
+    ]}
+  );
+  const result=await generateGuide({index:fakeIndex(),question:"black box",sendModel:model.sendModel});
+  assert.equal(result.broaderCount,0);
+  assert.equal(result.rejectedCount,1);
+});
+
+test("accepted broader steps use reviewer connection rather than misleading drafted claims", async () => {
+  const m=standardSequence();
+  const result=await generateGuide({index:fakeIndex(),question:"black box",sendModel:m.sendModel});
+  assert.equal(result.broaderCount,1);
+  assert.match(result.steps[1].explanation,/^Related context:/);
+  assert.doesNotMatch(result.steps[1].explanation,/directly answers/i);
+  assert.equal(result.steps[1].why,"Opacity and model interpretability create accountability concerns in deployments.");
+  assert.match(m.prompts[2],/bridgeQuote/);
 });
