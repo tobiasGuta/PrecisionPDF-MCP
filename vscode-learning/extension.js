@@ -8,10 +8,41 @@ const { randomBytes } = require("node:crypto");
 const { buildPrompt } = require("./prompt");
 const { TutorSession } = require("./session");
 const { attachGuidedReading } = require("./guided_controller");
+const { findExistingBackend, isBackendRepo } = require("./backend");
 
-function resolveRepoPath() {
-  const setting = vscode.workspace.getConfiguration("precisionpdfLearning").get("repositoryPath");
-  return path.resolve(setting || path.join(__dirname, ".."));
+async function resolveRepoPath() {
+  const configuration = vscode.workspace.getConfiguration("precisionpdfLearning");
+  const configured = configuration.get("repositoryPath");
+  const known = findExistingBackend(configured, __dirname);
+  if (known) return known;
+
+  const message = configured
+    ? "The configured PrecisionPDF Python backend could not be found. Select the root of your PrecisionPDF-MCP clone."
+    : "PrecisionPDF Learning Mode needs its local Python backend. Select the root of your PrecisionPDF-MCP clone once.";
+  const choice = await vscode.window.showWarningMessage(message, "Select Backend Folder");
+  if (choice !== "Select Backend Folder") return null;
+  const folders = await vscode.window.showOpenDialog({
+    canSelectFiles: false,
+    canSelectFolders: true,
+    canSelectMany: false,
+    openLabel: "Use PrecisionPDF Backend",
+    title: "Select the PrecisionPDF-MCP repository root"
+  });
+  if (!folders || !folders.length) return null;
+  const selected = path.resolve(folders[0].fsPath);
+  if (!isBackendRepo(selected)) {
+    vscode.window.showErrorMessage(
+      "This folder is not a PrecisionPDF-MCP backend. Choose the repository root containing pyproject.toml and src/precisionpdf_mcp."
+    );
+    return null;
+  }
+  try {
+    await configuration.update("repositoryPath", selected, vscode.ConfigurationTarget.Global);
+  } catch (error) {
+    vscode.window.showErrorMessage("Could not save the PrecisionPDF backend path: " + error.message);
+    return null;
+  }
+  return selected;
 }
 
 function readPage(repo, root, filename, page) {
@@ -75,13 +106,8 @@ function makeHtml(context, webview) {
 async function openLearningMode(context) {
   const picked = await pickPdf();
   if (!picked) return;
-  const repo = resolveRepoPath();
-  if (!fs.existsSync(path.join(repo, "src", "precisionpdf_mcp", "reader_bridge.py"))) {
-    vscode.window.showErrorMessage(
-      "PrecisionPDF repository not found. Set precisionpdfLearning.repositoryPath to your clone directory."
-    );
-    return;
-  }
+  const repo = await resolveRepoPath();
+  if (!repo) return;
 
   const panel = vscode.window.createWebviewPanel(
     "precisionpdfLearning", "PrecisionPDF Learning: " + path.basename(picked.filename),

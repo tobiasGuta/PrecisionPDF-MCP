@@ -1,0 +1,7 @@
+.vscode/**
+test/**
+node_modules/**
+**/*.vsix
+package-lock.json
+.gitignore
+**/.DS_Store
