@@ -16,6 +16,10 @@ A local PDF toolkit combining a **PrecisionPDF MCP server** for reviewable PDF a
 - Atomic replacement when saving an annotated working copy, so Okular can reload after each save.
 - Optional read-only VS Code PDF reader with word-level selection, page-aware tutoring, whole-PDF guided explanations, evidence navigation, and local exact-phrase search.
 
+## Local VS Code installation
+
+To build and install Learning Mode in ordinary VS Code on Fedora, see [VSIX installation instructions](vscode-learning/README.md#install-in-normal-vs-code-on-fedora-local-vsix). The VSIX requires the Python backend in your local repository clone; first launch prompts for its location. No Marketplace publication is required.
+
 ## Fedora install
 
 1. Ensure `uv` and `okular` are available (`sudo dnf install uv okular`).

@@ -1,0 +1,40 @@
+name: Learning Mode VSIX
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "vscode-learning/**"
+      - ".github/workflows/learning-mode-vsix.yml"
+  pull_request:
+    paths:
+      - "vscode-learning/**"
+      - ".github/workflows/learning-mode-vsix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install packaging dependencies
+        working-directory: vscode-learning
+        run: npm install --no-audit --no-fund
+      - name: Test Learning Mode
+        working-directory: vscode-learning
+        run: npm test
+      - name: Package local VSIX
+        working-directory: vscode-learning
+        run: npm run package:vsix
+      - name: Upload installable VSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: precisionpdf-learning-vsix
+          path: vscode-learning/precisionpdf-learning-*.vsix
+          if-no-files-found: error
