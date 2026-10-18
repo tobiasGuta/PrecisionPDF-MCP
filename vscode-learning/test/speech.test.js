@@ -65,3 +65,10 @@ test("Rejects overlong narration without starting Kokoro", () => {
   assert.equal(sent[0].type, "speech-error");
   service.dispose();
 });
+
+// The message sender must exist before the speech service is constructed.
+test("extension initializes speech after the webview sender", () => {
+  const fs = require("node:fs");
+  const ext = fs.readFileSync(require("node:path").join(__dirname, "..", "extension.js"), "utf8");
+  assert(ext.indexOf("const send = (message)") < ext.indexOf("const speech = new SpeechService"));
+});

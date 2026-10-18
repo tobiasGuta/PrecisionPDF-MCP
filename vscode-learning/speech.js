@@ -11,8 +11,8 @@ const MAX_TIME_MS = 240000;
 
 function plainSpeech(markdown) {
   return String(markdown || "")
-    .replace(/https?:\/\/\S+/g, "")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, "")
     .replace(/<[^>]*>/g, "")
     .replace(/[#*_~>|]/g, " ")
     .replace(/\s+/g, " ").trim();
