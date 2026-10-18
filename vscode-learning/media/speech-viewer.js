@@ -1,14 +1,20 @@
 "use strict";
 
-// Webview-local playback state. Copilot text remains displayed and unchanged.
+// Keep one user-activated Web Audio context for the entire explanation.
+// Recreating HTMLAudioElement for each sentence triggered Chromium's autoplay
+// policy at every boundary and required an extra Resume click.
 function setupPrecisionPDFSpeech({ host }) {
   const entries = new Map();
   let activeId = null;
+  let context = null;
+  let source = null;
   let queue = [];
-  let playing = null;
+  let decoded = null;
+  let decoding = false;
   let paused = false;
   let finished = false;
   let status = "";
+  let generation = 0;
 
   function update() {
     for (const [id, item] of entries) {
@@ -21,53 +27,112 @@ function setupPrecisionPDFSpeech({ host }) {
 
   function stop(notify = true) {
     const wasActive = activeId !== null;
+    generation++;
     activeId = null;
     queue = [];
+    decoded = null;
+    decoding = false;
     finished = false;
     paused = false;
     status = "";
-    if (playing) {
-      playing.pause();
-      playing.removeAttribute("src");
-      playing.load();
-      playing = null;
+    if (source) {
+      source.onended = null;
+      try { source.stop(); } catch (_) { /* May have already ended. */ }
+      source.disconnect();
+      source = null;
+    }
+    if (context) {
+      const old = context;
+      context = null;
+      void old.close().catch(() => {});
     }
     update();
     if (wasActive && notify) host.postMessage({ type: "speechStop" });
   }
 
+  function fail(message) {
+    const id = activeId;
+    stop();
+    const entry = entries.get(id);
+    if (entry) entry.status.textContent = String(message || "Audio playback failed.");
+  }
+
   function playNext() {
-    if (activeId === null || paused || playing) return;
-    if (!queue.length) {
-      if (finished) stop(false);
-      else { status = "Generating speech locally…"; update(); }
+    if (activeId === null || !context || paused || source || decoding) return;
+    if (!decoded) {
+      if (!queue.length) {
+        if (finished) stop(false);
+        else { status = "Generating speech locally…"; update(); }
+        return;
+      }
+      const currentContext = context;
+      const currentGeneration = generation;
+      let buffer;
+      try {
+        const bytes = atob(queue.shift());
+        const array = new Uint8Array(bytes.length);
+        for (let i = 0; i < bytes.length; i++) array[i] = bytes.charCodeAt(i);
+        buffer = array.buffer;
+      } catch (_) {
+        fail("Could not decode locally generated audio.");
+        return;
+      }
+      decoding = true;
+      currentContext.decodeAudioData(buffer).then((audio) => {
+        if (generation !== currentGeneration || context !== currentContext) return;
+        decoding = false;
+        decoded = audio;
+        playNext();
+      }).catch(() => {
+        if (generation === currentGeneration) fail("Could not play this voice segment.");
+      });
       return;
     }
-    const id = activeId;
-    const clip = new Audio("data:audio/wav;base64," + queue.shift());
-    playing = clip;
+
+    const currentContext = context;
+    const currentGeneration = generation;
+    const node = currentContext.createBufferSource();
+    node.buffer = decoded;
+    decoded = null;
+    node.connect(currentContext.destination);
+    source = node;
     status = "Speaking · af_heart";
     update();
-    clip.onended = () => {
-      if (playing !== clip) return;
-      playing = null;
-      clip.removeAttribute("src");
-      clip.load();
+    node.onended = () => {
+      if (generation !== currentGeneration || source !== node) return;
+      node.disconnect();
+      source = null;
       playNext();
     };
-    clip.onerror = () => {
-      if (activeId !== id) return;
-      stop();
-      const entry = entries.get(id);
-      if (entry) entry.status.textContent = "Audio playback failed.";
-    };
-    clip.play().catch(() => {
-      if (activeId === id && playing === clip) {
-        paused = true;
-        status = "Playback blocked; click Resume.";
-        update();
-      }
+    try { node.start(); }
+    catch (_) { fail("Unable to start local voice playback."); }
+  }
+
+  // This runs synchronously from the user's click, which unlocks Web Audio
+  // once; all later sentence transitions share the same activated context.
+  function start(turnId) {
+    stop();
+    const AudioContextType = globalThis.AudioContext || globalThis.webkitAudioContext;
+    if (!AudioContextType) {
+      const item = entries.get(turnId);
+      if (item) item.status.textContent = "VS Code Web Audio is unavailable.";
+      return;
+    }
+    try { context = new AudioContextType(); }
+    catch (_) {
+      const item = entries.get(turnId);
+      if (item) item.status.textContent = "Cannot initialize audio playback.";
+      return;
+    }
+    activeId = turnId;
+    status = "Loading local Kokoro voice…";
+    const currentGeneration = generation;
+    const unlock = context.resume();
+    unlock.catch(() => {
+      if (generation === currentGeneration) fail("VS Code blocked audio playback.");
     });
+    update();
+    host.postMessage({ type: "speechSpeak", turnId });
   }
 
   function createControls(turnId) {
@@ -90,25 +155,25 @@ function setupPrecisionPDFSpeech({ host }) {
 
     toggle.addEventListener("click", () => {
       if (activeId !== turnId) {
-        stop();
-        activeId = turnId;
-        status = "Loading local Kokoro voice…";
-        update();
-        host.postMessage({ type: "speechSpeak", turnId });
+        start(turnId);
       } else if (!paused) {
         paused = true;
-        if (playing) playing.pause();
         status = "Paused";
         update();
+        const currentGeneration = generation;
+        context.suspend().catch(() => {
+          if (generation === currentGeneration) fail("Unable to pause audio.");
+        });
       } else {
         paused = false;
-        if (playing) {
-          status = "Speaking · af_heart";
-          playing.play().catch(() => { paused = true; status = "Playback blocked."; update(); });
-        } else {
-          playNext();
-        }
+        status = source ? "Speaking · af_heart" : "Generating speech locally…";
         update();
+        const currentGeneration = generation;
+        context.resume().then(() => {
+          if (generation === currentGeneration) playNext();
+        }).catch(() => {
+          if (generation === currentGeneration) fail("Unable to resume audio.");
+        });
       }
     });
     stopButton.addEventListener("click", () => stop());
@@ -135,10 +200,7 @@ function setupPrecisionPDFSpeech({ host }) {
       finished = true;
       playNext();
     } else if (message.type === "speech-error") {
-      const id = activeId;
-      stop();
-      const entry = entries.get(id);
-      if (entry) entry.status.textContent = String(message.message || "Speech generation failed.");
+      fail(message.message || "Speech generation failed.");
     } else if (message.type === "speech-start") {
       status = "Generating speech locally…";
       update();
