@@ -7,7 +7,7 @@ const fs = require("node:fs");
 
 const MAX_TEXT = 3500;
 const MAX_LINE = 3 * 1024 * 1024;
-const MAX_TIME_MS = 120000;
+const MAX_TIME_MS = 240000;
 
 function plainSpeech(markdown) {
   return String(markdown || "")
@@ -110,6 +110,7 @@ class SpeechService {
         this.active = null;
       }
     });
+    proc.stdin.on("error", (error) => fail("Voice worker input failed: " + error.message));
     proc.stdin.end(JSON.stringify({ text }) + "\n");
   }
 }

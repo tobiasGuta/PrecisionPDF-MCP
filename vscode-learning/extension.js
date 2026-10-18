@@ -125,10 +125,10 @@ async function openLearningMode(context) {
   const session = new TutorSession();
   const answers = new Map();
   let turnSerial = 0;
-  const speech = new SpeechService({ repo, send });
   let loadSerial = 0;
 
   const send = (message) => { void panel.webview.postMessage(message); };
+  const speech = new SpeechService({ repo, send });
   panel.onDidDispose(() => {
     if (tokenSource) tokenSource.cancel();
     speech.dispose();
