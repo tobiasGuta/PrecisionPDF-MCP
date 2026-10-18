@@ -61,3 +61,41 @@ Each output filename is protected against accidental overwrite (use `--overwrite
 Choose the voice you prefer, compare first-response latency and audio quality, and decide whether a dedicated local TTS process should serve the VS Code webview. This branch **does not yet provide a Read Aloud button**; that is deliberately reserved for the next milestone after your Fedora benchmark.
 
 References: [kokoro-onnx upstream](https://github.com/thewh1teagle/kokoro-onnx), [upstream Python WAV example](https://github.com/thewh1teagle/kokoro-onnx/blob/main/examples/save.py).
+
+
+## First experimental Read Aloud implementation (af_heart)
+
+On this same branch, completed **Manual tutoring** Copilot answers now offer
+**Read aloud / Pause / Resume / Stop** under the visible written answer.
+Voice: the chosen offline Kokoro voice **af_heart**, CPU-only, with no additional
+Copilot request. Speech is opt-in and runs in a cancellable, separate Python
+process. It generates short WAV chunks in memory, then plays them sequentially
+in the VS Code webview. No audio files are persisted, and PDF files remain
+read-only. Each new narration starts a new worker process (model startup takes
+around 1.3 seconds on the tested machine); a persistent worker may follow if
+runtime testing shows repeated startup delays.
+
+The worker is installed in the **selected backend clone** at
+experiments/kokoro_speech_worker.py and calls the existing isolated Kokoro
+environment at ~/.cache/precisionpdf-kokoro/.venv/bin/python. The full-quality
+Kokoro model and voice pack from the setup section above must be present.
+
+After updating the branch, rebuild/install the experimental VSIX locally:
+
+    cd /mnt/Development/Tools/PrecisionPDF-MCP
+    npm --prefix vscode-learning test
+    cd vscode-learning
+    npm run package:vsix
+    code --install-extension ./precisionpdf-learning-0.6.2.vsix --force
+
+Reload VS Code, reopen PrecisionPDF Learning Mode, ask Copilot a question,
+then click **Read aloud** after the answer finishes. Confirm that the answer
+remains visible; audio can pause/resume and stop; a second request cancels the
+first; and Guided Reading's existing **Play** remains navigation-only.
+
+Known first-version limits: max 3,500 spoken characters per answer; it is
+not enabled for Guided Reading yet; no voice or reading-rate selector yet.
+Playback relies on audio support in your VS Code webview and may require a
+manual Resume click if Chromium blocks autoplay. Speech text is a simplified
+plain-text form of the Copilot response, so long code/math passages may not
+read naturally.

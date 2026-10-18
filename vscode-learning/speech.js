@@ -6,7 +6,7 @@ const os = require("node:os");
 const fs = require("node:fs");
 
 const MAX_TEXT = 3500;
-const MAX_LINE = 1024 * 1024;
+const MAX_LINE = 3 * 1024 * 1024;
 const MAX_TIME_MS = 120000;
 
 function plainSpeech(markdown) {
