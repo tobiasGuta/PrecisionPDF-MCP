@@ -8,6 +8,7 @@ const { randomBytes } = require("node:crypto");
 const { buildPrompt } = require("./prompt");
 const { TutorSession } = require("./session");
 const { attachGuidedReading } = require("./guided_controller");
+const { SpeechService } = require("./speech");
 const { findExistingBackend, isBackendRepo } = require("./backend");
 
 async function resolveRepoPath() {
@@ -100,6 +101,7 @@ function makeHtml(context, webview) {
     .replaceAll("{{CSS}}", uri("viewer.css"))
     .replaceAll("{{MARKDOWN_JS}}", uri("markdown.js"))
     .replaceAll("{{GUIDE_JS}}", uri("guide-viewer.js"))
+    .replaceAll("{{SPEECH_JS}}", uri("speech-viewer.js"))
     .replaceAll("{{JS}}", uri("viewer.js"));
 }
 
@@ -121,10 +123,16 @@ async function openLearningMode(context) {
   let busy = false;
   let tokenSource = null;
   const session = new TutorSession();
+  const answers = new Map();
+  let turnSerial = 0;
   let loadSerial = 0;
 
   const send = (message) => { void panel.webview.postMessage(message); };
-  panel.onDidDispose(() => { if (tokenSource) tokenSource.cancel(); });
+  const speech = new SpeechService({ repo, send });
+  panel.onDidDispose(() => {
+    if (tokenSource) tokenSource.cancel();
+    speech.dispose();
+  });
 
   const load = async (pageNumber) => {
     if (busy) return send({ type: "error", message: "Wait for the current explanation to finish." });
@@ -164,8 +172,9 @@ async function openLearningMode(context) {
     });
     const history = session.history();
     busy = true;
+    const turnId = ++turnSerial;
     tokenSource = new vscode.CancellationTokenSource();
-    send({ type: "thinking", question: userQuestion, page: pageData.page, passage });
+    send({ type: "thinking", question: userQuestion, page: pageData.page, passage, turnId });
     try {
       // Model access and authentication prompts occur only following the user's Ask click.
       const models = await vscode.lm.selectChatModels({ vendor: "copilot" });
@@ -186,10 +195,14 @@ async function openLearningMode(context) {
         send({ type: "chunk", text: chunk });
       }
       session.record(userQuestion, answer);
-      send({ type: "done" });
+      if (answer.trim()) {
+        answers.set(turnId, answer);
+        if (answers.size > 50) answers.delete(answers.keys().next().value);
+      }
+      send({ type: "done", turnId, speechAvailable: Boolean(answer.trim()) });
     } catch (error) {
       send({ type: "error", message: error.message || String(error) });
-      send({ type: "done" });
+      send({ type: "done", turnId, speechAvailable: false });
     } finally {
       busy = false;
       tokenSource.dispose();
@@ -200,6 +213,14 @@ async function openLearningMode(context) {
   panel.webview.onDidReceiveMessage((message) => {
     if (!message || typeof message !== "object") return;
     if (guided.handle(message)) return;
+    if (message.type === "speechSpeak") {
+      const answer = answers.get(message.turnId);
+      if (answer) speech.speak(message.turnId, answer);
+      else send({ type: "speech-error", turnId: message.turnId,
+        message: "This finished response is no longer available for narration." });
+      return;
+    }
+    if (message.type === "speechStop") { speech.stop(); return; }
     if (message.type === "ready") void load(1);
     if (message.type === "navigate") void load(message.page);
     if (message.type === "ask") void explain(message);
@@ -217,6 +238,8 @@ async function openLearningMode(context) {
     }
     if (message.type === "reset" && !busy) {
       session.reset();
+      answers.clear();
+      speech.stop();
       send({ type: "thread-reset", reason: "New discussion started." });
     }
     if (message.type === "copy") {

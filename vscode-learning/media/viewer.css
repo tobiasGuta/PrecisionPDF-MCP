@@ -151,3 +151,8 @@ textarea:focus-visible, button:focus-visible { outline: 2px solid var(--vscode-f
 #guideBroaderSection[hidden], #guideBroaderSteps[hidden] { display: none; }
 #guideBroaderToggle { align-self: flex-start; text-align: left; white-space: normal; }
 #guideBroaderSteps { padding-left: 8px; border-left: 2px solid var(--vscode-panel-border); }
+
+/* Opt-in, local text-to-speech controls for completed tutor responses. */
+.speech-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.speech-controls[hidden], .speech-controls button[hidden] { display: none; }
+.speech-status { color: var(--vscode-descriptionForeground); font-size: 11px; }

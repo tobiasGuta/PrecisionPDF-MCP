@@ -5,6 +5,7 @@ const el = (id) => document.getElementById(id);
 const stage = el("stage");
 const overlay = el("overlay");
 const guidedUI = globalThis.setupPrecisionPDFGuided({ host, el, overlay, stage });
+const speechUI = globalThis.setupPrecisionPDFSpeech({ host });
 let page = null;
 let selectedStart = -1;
 let selectedEnd = -1;
@@ -12,6 +13,7 @@ let dragging = false;
 let answering = false;
 let answerText = "";
 let activeAnswer = null;
+let activeTurnId = null;
 let currentContext = "";
 
 function selectionText() {
@@ -118,9 +120,11 @@ function navigate(delta) {
 }
 
 function clearThread(reason, preserveSelection = false) {
+  speechUI.clear();
   el("thread").replaceChildren();
   answerText = "";
   activeAnswer = null;
+  activeTurnId = null;
   el("threadStatus").textContent = reason || "Select a passage and ask your first question.";
   if (!preserveSelection) currentContext = "";
   updateComposerContext();
@@ -146,10 +150,11 @@ function beginTurn(message) {
   const answer = document.createElement("div");
   answer.className = "turn-answer";
   answer.textContent = "Thinking…";
-  card.append(label, question, evidence, answerLabel, answer);
+  card.append(label, question, evidence, answerLabel, answer, speechUI.createControls(message.turnId));
   el("thread").appendChild(card);
   el("threadStatus").textContent = "Discussion preserved across pages. New questions use the current page and selection.";
   activeAnswer = answer;
+  activeTurnId = message.turnId;
   answerText = "";
   const scroller = el("tutorScroll");
   scroller.scrollTop = scroller.scrollHeight;
@@ -165,6 +170,7 @@ function updateAnswer() {
   if (nearBottom) scroller.scrollTop = scroller.scrollHeight;
 }
 
+el("guidedMode").addEventListener("click", () => speechUI.stop());
 el("prev").addEventListener("click", () => navigate(-1));
 el("next").addEventListener("click", () => navigate(1));
 el("clear").addEventListener("click", () => {
@@ -200,6 +206,7 @@ el("copy").addEventListener("click", () => {
 window.addEventListener("message", (event) => {
   const message = event.data;
   if (!message || typeof message !== "object") return;
+  if (speechUI.onMessage(message)) return;
   if (guidedUI.onMessage(message)) return;
   if (message.type === "loading") {
     el("notice").textContent = "Loading page…";
@@ -219,6 +226,7 @@ window.addEventListener("message", (event) => {
     answerText += String(message.text || "");
     updateAnswer();
   } else if (message.type === "done") {
+    speechUI.complete(message.turnId, message.speechAvailable === true);
     if (activeAnswer && !answerText) activeAnswer.textContent = "No explanation was returned.";
     answering = false;
     el("ask").disabled = false;

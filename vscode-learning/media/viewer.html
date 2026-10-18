@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src {{CSP}} 'unsafe-inline'; script-src 'nonce-{{NONCE}}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src {{CSP}} 'unsafe-inline'; script-src 'nonce-{{NONCE}}'; media-src data:;">
   <title>PrecisionPDF Learning Mode</title>
   <link rel="stylesheet" href="{{CSS}}">
 </head>
@@ -99,6 +99,7 @@
   </main>
   <script nonce="{{NONCE}}" src="{{MARKDOWN_JS}}"></script>
   <script nonce="{{NONCE}}" src="{{GUIDE_JS}}"></script>
+  <script nonce="{{NONCE}}" src="{{SPEECH_JS}}"></script>
   <script nonce="{{NONCE}}" src="{{JS}}"></script>
 </body>
 </html>
