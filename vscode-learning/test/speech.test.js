@@ -15,7 +15,8 @@ class FakeChild extends EventEmitter {
     super();
     this.killed = false;
     this.input = "";
-    this.stdin = { end: value => { this.input = value; } };
+    this.stdin = new EventEmitter();
+    this.stdin.end = value => { this.input = value; };
     this.stdout = new EventEmitter();
     this.stdout.setEncoding = () => {};
     this.stderr = new EventEmitter();
