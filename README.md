@@ -14,7 +14,9 @@ A local PDF toolkit combining a **PrecisionPDF MCP server** for reviewable PDF a
 - Confine all PDF and image I/O to a single workspace directory (including symlink resolution).
 - Refuse accidental original-file overwrite. Only explicitly update `*-annotated.pdf` copies.
 - Atomic replacement when saving an annotated working copy, so Okular can reload after each save.
-- Optional read-only VS Code PDF reader with word-level selection, page-aware tutoring, whole-PDF guided explanations, evidence navigation, and local exact-phrase search.
+- Optional read-only VS Code reader with saved reading position, local Find and definition lookup, page OCR, and page-aware Copilot tutoring.
+- Guided explanations for a PDF, section, or page range with source highlights. Understanding checks and saved review questions link back to the original passage.
+- Offline Kokoro narration for a page, selection, or tutor response, with follow-along highlighting when reading the PDF.
 
 ## Local VS Code installation
 
@@ -50,11 +52,11 @@ Replace the source directory with your clone location. Open **MCP: List Servers*
 
 ## VS Code Learning Mode — setup and use
 
-The optional extension lives in **[vscode-learning/](vscode-learning/)** and is separate from the MCP server. **Learning Mode is read-only:** selecting or automatically highlighting passages does **not** add annotations or modify your PDF. The MCP tools above handle persistent highlights.
+The optional extension lives in **[vscode-learning/](vscode-learning/)** and is separate from the MCP server. **Learning Mode is read-only:** selecting or automatically highlighting passages does **not** add annotations or modify your PDF. The [MCP tools](#mcp-tool-reference) handle persistent highlights.
 
 ### Start Learning Mode (development installation)
 
-This extension currently runs via VS Code's **Extension Development Host** rather than a Marketplace installation.
+Use the local VSIX for regular reading. The **Extension Development Host** is available for testing changes to the extension.
 
 1. Install VS Code, Python 3.11+, [uv](https://docs.astral.sh/uv/), and (for tests) Node.js 20+. From the repository root, run `uv sync --extra dev`.
 2. Open the extension folder in VS Code, **not** the repository root:
@@ -85,10 +87,10 @@ If the extension cannot find the repository, set `precisionpdfLearning.repositor
 ### Guided Reading — document-wide questions and highlighted evidence
 
 1. Choose **Guided Reading**.
-2. Enter a question, then select a **Search behavior**:
-   - **Automatic:** a short term like `black box` or “Where does it mention ‘black box’?” is treated as a local exact-phrase search. Questions such as “Explain why deep learning models are called black boxes” use Copilot.
-   - **Find exact wording (local; no Copilot):** scan all indexed pages for occurrences of the phrase. Click a result to jump to and temporarily highlight the match. The full match count is reported, with at most 150 clickable results.
-   - **Guided explanation (Copilot):** ask, for example, “What are the main ideas of this PDF?” or “Why are neural networks difficult to interpret?”
+2. Enter a question, then select a **Method**:
+   - **Automatic** a short term like `black box` or “Where does it mention ‘black box’?” is treated as a local exact-phrase search. Questions such as “Explain why deep learning models are called black boxes” use Copilot.
+   - **Exact wording · local** scan all indexed pages for occurrences of the phrase. Click a result to jump to and temporarily highlight the match. The full match count is reported, with at most 150 clickable results.
+   - **Explanation · Copilot** ask, for example, “What are the main ideas of this PDF?” or “Why are neural networks difficult to interpret?”
 3. Click **Find / Analyze**.
 4. For Copilot-guided analysis, inspect the estimated number of model requests and **approve** before the extension sends extracted PDF text.
 5. Read the **Answer from reviewed direct evidence** and navigate its supporting passages with **Previous**, **Next**, or **Play / Pause** (default **12 seconds per step**). Click an evidence item to navigate directly to its page.
@@ -105,7 +107,7 @@ If the extension cannot find the repository, set `precisionpdfLearning.repositor
 - Guided analysis can use the whole PDF, an outline section, or a page range. Each run has limits of **60 pages**, **350,000 indexed characters**, **1,600 excerpts**, and **30 analysis batches**, plus synthesis and relevance-review requests. Oversized documents are rejected rather than summarized as though fully analyzed.
 - Neither mode changes the original PDF. To **save** a highlight or change an existing one, use the separate MCP annotation tools.
 
-For detailed instructions, controls, limitations, and feature history, see **[vscode-learning/README.md](vscode-learning/README.md)**.
+See the [reader guide](vscode-learning/README.md#reading-a-pdf), [study and review guide](vscode-learning/README.md#practice-while-reading), and [offline audio setup](experiments/KOKORO_VOICE_PROBE.md).
 
 ### Test Learning Mode
 
@@ -117,6 +119,23 @@ uv run pytest -q
 ```
 
 The JavaScript suite uses Node's built-in test runner and needs no `npm install` for this repository. Automated tests do not replace testing the webview and Copilot integration in the Extension Development Host.
+
+## MCP tool reference
+
+The server uses stdio. Set `PRECISIONPDF_ROOT` to the folder containing your PDFs. Use paths within that directory and count PDF pages and repeated occurrences from 1. Pass the `fingerprint` from a proposal as `expected_fingerprint` when applying it.
+
+| Tool | Inputs and result |
+| --- | --- |
+| `list_pdfs` | Lists up to 200 PDFs in the workspace. |
+| `read_pdf_page` | Takes `file` and optional `page` (default 1). Returns selectable text and the document fingerprint. |
+| `propose_highlight` | Takes `file`, `page`, `exact_quote`, and optional `occurrence`. Returns matched words, highlight coordinates, and the fingerprint. Supply the occurrence if the quote repeats. |
+| `apply_highlight` | Takes `file`, `output_file`, `page`, `exact_quote`, and `expected_fingerprint`. Optional inputs are `color` (yellow by default), `opacity` (0.35 by default), `occurrence`, and `overwrite_annotated_copy`. Saves a new copy or explicitly updates the same annotated copy. |
+| `list_annotations` | Takes `file` and optional `page`. Returns existing annotations with their page numbers and object references (`xref`). |
+| `render_pdf_page` | Takes `file` and optional `page` (default 1). Saves a PNG preview beside the PDF and returns its path and dimensions. |
+| `propose_annotation_update` | Takes `file`, `page`, `xref`, `color`, and optional `opacity`. Previews an edit to an existing highlight. |
+| `apply_annotation_update` | Takes the update inputs plus `expected_fingerprint`. Updates the highlight on the annotated copy. |
+| `propose_annotation_removal` | Takes `file`, `page`, and `xref`. Identifies the highlight to remove and returns the fingerprint. |
+| `apply_annotation_removal` | Takes the removal inputs plus `expected_fingerprint`. Removes the specified highlight from the annotated copy. |
 
 ## Suggested MCP annotation workflow
 

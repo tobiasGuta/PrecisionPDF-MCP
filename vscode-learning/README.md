@@ -32,9 +32,9 @@ For updates, rebuild and reinstall the new VSIX. A VSIX is **not** a Marketplace
 - Open a PDF from VS Code Explorer with **Open PDF in PrecisionPDF Learning Mode**, or use the Command Palette to browse the workspace. Reopening a PDF restores its page, scroll position, and zoom when the saved document fingerprint still matches.
 - Use the page number field, authored PDF outline, or Left and Right arrows. Toggle **Study panel** to give the PDF the full width. **Back** returns to the position before a source jump. **Fit width** and the zoom selector adjust the reader independently of the tutor.
 - Use **Find** or **Ctrl+F** inside the reader to search locally and jump to matches. Results show which pages had selectable text and how many were skipped. The count includes all matches within the supported search size. The first 150 hits are available for navigation.
-- Select text to **Copy quote** with its PDF page, **Pin passage** for a cross-page comparison, or **Read selection** with the optional local Kokoro setup. Pins last for the reader session. Read Aloud also works on completed tutor responses and supports up to 3,500 characters.
+- Select text to **Copy quote** with its PDF page, **Pin passage** for a cross-page comparison, or **Listen** to hear the selection with the optional local Kokoro setup. Up to three pins last for the reader session. **Read aloud** also works on completed tutor responses.
 - **OCR this page** appears when a page has no selectable words. Install Tesseract language data first, such as `tesseract-langpack-eng` on Fedora. Set `TESSDATA_PREFIX` to the directory containing the `.traineddata` files if they are not detected. The reader reuses OCR results for selection, Find and Guided Reading during the session. Review OCR quotations against the page.
-- In **Manual tutoring**, choose **Selected passage only** to send the question and selected text with its document and page labels. The full-context option also sends bounded page text, pins, and recent discussion. **Copy prompt** places source context on the clipboard for use in another chat client.
+- In **Manual tutoring**, choose **Selection only** to send the question and selected text with its document and page labels. The full-context option also sends bounded page text, pins, and recent discussion. **Copy prompt** places source context on the clipboard for use in another chat client.
 - In **Guided Reading**, choose the whole PDF, the current authored outline section, or a page range. The limit is 60 pages per guided run, with additional evidence and request limits. The confirmation reports the selected pages and maximum Copilot requests. Guide judgments use the question and source evidence across subjects.
 
 ## Practice while reading
@@ -46,6 +46,14 @@ For updates, rebuild and reinstall the new VSIX. A VSIX is **not** a Marketplace
 - Choose **Listen** to hear the current page or selection with the optional English Kokoro voice. **Follow audio** highlights each passage as it plays. Choose 0.8×, 1×, or 1.2× before starting playback. [Kokoro setup](../experiments/KOKORO_VOICE_PROBE.md)
 
 The reader uses the configured Python environment in offline, no-sync mode. Run `uv sync` in the matching backend clone during installation or update. Set the backend and uv paths in VS Code User settings.
+
+## Troubleshooting
+
+- **A PDF is missing.** Open its containing folder in VS Code. The picker lists up to 150 PDFs per workspace folder. Use the Explorer context menu to open a specific PDF directly. Keep the file and any symlink target inside the opened workspace.
+- **The Python reader fails after an update.** Update the backend clone to the revision matching the VSIX, run `uv sync` there, and check both PrecisionPDF settings in VS Code User settings.
+- **Find or the tutor has no text.** For an image-only page, run **OCR this page**. Search reports pages without selectable text, and OCR results are reused for the current reader session.
+- **Copilot is unavailable.** Check that VS Code has access to a Copilot model. You can use **Copy prompt** to take the current source context into another chat client. Reading, local search, and self-checks work offline.
+- **A saved question’s source will not highlight.** The reader verifies the PDF fingerprint and original words. You can still review the stored quotation and answer if the PDF changed.
 
 ## Fedora development setup
 
@@ -65,7 +73,7 @@ webview, word selection, and actual Copilot access.
 ## Scope and privacy
 
 - Learning Mode reads PDFs within the workspace and shows temporary highlights. Use the MCP tools for persistent annotations.
-- Find, rendering, OCR, and Kokoro run locally. Copilot receives extracted text upon an explicit tutor request or guided analysis confirmation.
+- Find, rendering, OCR, saved review questions, and Kokoro run locally. **Ask with Copilot** sends the context chosen in the composer. Guided analysis, question drafting, and feedback ask for confirmation before sending source text. Feedback also sends your answer.
 - Password-protected PDFs are unsupported. Complex layouts can still affect recognized reading order.
 
 ## Release history
