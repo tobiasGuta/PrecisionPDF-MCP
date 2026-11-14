@@ -7,25 +7,30 @@ not alter the MCP server or any annotations.
 
 ## Install in normal VS Code on Fedora (local VSIX)
 
-Learning Mode can run in your regular VS Code window without the Extension Development Host. The VSIX contains the JavaScript extension and webview assets; the local Python backend is **not bundled**.
-
-1. Clone this repository on the Fedora machine, and from the repository root run `uv sync --extra dev` (or `uv sync` for runtime-only use). Ensure `uv` is on PATH.
-2. Build the extension locally with Node.js 22+:
+1. Open the [latest GitHub Release](https://github.com/tobiasGuta/PrecisionPDF-MCP/releases/latest) and download the `.vsix` under **Assets**. In VS Code 1.98 or later, run **Extensions: Install from VSIX…** from the Command Palette and select the file.
+2. Set up the matching Python backend in a terminal. Replace the tag below if you downloaded a different version.
 
    ```bash
-   cd vscode-learning
-   npm install
-   npm test
-   npm run package:vsix
-   code --install-extension precisionpdf-learning-0.8.2.vsix
+   git clone --branch v0.8.2 https://github.com/tobiasGuta/PrecisionPDF-MCP.git
+   cd PrecisionPDF-MCP
+   uv sync
    ```
 
-   Alternatively, download the VSIX from the **Learning Mode VSIX** GitHub Actions workflow artifact for the matching commit and install that file using `code --install-extension /path/to/file.vsix` or **Extensions → Install from VSIX...**.
-3. Reload your regular VS Code window. Open the folder containing your PDFs and run **PrecisionPDF: Open Learning Mode** from the Command Palette.
-4. The first time, when asked for a backend folder, select the root of your local `PrecisionPDF-MCP` clone (the folder containing `pyproject.toml`). The extension saves this absolute path in the User setting `precisionpdfLearning.repositoryPath`. Development Host use still discovers the parent repository automatically.
-5. If VS Code cannot find `uv`, set `precisionpdfLearning.uvPath` to the path reported by `command -v uv` in your Fedora terminal.
+3. Reload VS Code, open the folder containing your PDFs, and run **PrecisionPDF: Open Learning Mode**. When asked for the backend folder, select the clone containing `pyproject.toml`. If VS Code cannot find `uv`, set `precisionpdfLearning.uvPath` in User settings to the path returned by `command -v uv`.
 
-For updates, rebuild and reinstall the new VSIX. A VSIX is **not** a Marketplace publication. Manual Tutoring and Guided Reading still use GitHub Copilot's VS Code Language Model API and require available Copilot model access; local PDF search does not.
+The VSIX contains the extension and webview assets. The Python backend runs from the clone. Install later updates from GitHub Releases and update the backend to the matching tag. Copilot is required for AI explanations and feedback. Local reading, Find, and self-checks work offline once set up.
+
+### Build from source
+
+With Node.js 22 or later, run these commands from the repository root.
+
+```bash
+cd vscode-learning
+npm install
+npm test
+npm run package:vsix
+code --install-extension precisionpdf-learning-0.8.2.vsix
+```
 
 ## Reading a PDF
 

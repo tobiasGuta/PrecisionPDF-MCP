@@ -20,7 +20,7 @@ A local PDF toolkit combining a **PrecisionPDF MCP server** for reviewable PDF a
 
 ## Local VS Code installation
 
-To build and install Learning Mode in ordinary VS Code on Fedora, see [VSIX installation instructions](vscode-learning/README.md#install-in-normal-vs-code-on-fedora-local-vsix). The VSIX requires the Python backend in your local repository clone; first launch prompts for its location. No Marketplace publication is required.
+Download the VSIX from [GitHub Releases](https://github.com/tobiasGuta/PrecisionPDF-MCP/releases/latest), then choose **Extensions: Install from VSIX…** in the VS Code Command Palette. The reader also requires the matching Python backend in a local repository clone. Follow the [installation guide](vscode-learning/README.md#install-in-normal-vs-code-on-fedora-local-vsix) to set it up.
 
 ## Fedora install
 
