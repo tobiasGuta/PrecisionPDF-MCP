@@ -17,7 +17,7 @@ Learning Mode can run in your regular VS Code window without the Extension Devel
    npm install
    npm test
    npm run package:vsix
-   code --install-extension precisionpdf-learning-0.8.0.vsix
+   code --install-extension precisionpdf-learning-0.8.2.vsix
    ```
 
    Alternatively, download the VSIX from the **Learning Mode VSIX** GitHub Actions workflow artifact for the matching commit and install that file using `code --install-extension /path/to/file.vsix` or **Extensions → Install from VSIX...**.
@@ -36,6 +36,18 @@ For updates, rebuild and reinstall the new VSIX. A VSIX is **not** a Marketplace
 - **OCR this page** appears when a page has no selectable words. Install Tesseract language data first, such as `tesseract-langpack-eng` on Fedora. Set `TESSDATA_PREFIX` to the directory containing the `.traineddata` files if they are not detected. The reader reuses OCR results for selection, Find and Guided Reading during the session. Review OCR quotations against the page.
 - In **Manual tutoring**, choose **Selection only** to send the question and selected text with its document and page labels. The full-context option also sends bounded page text, pins, and recent discussion. **Copy prompt** places source context on the clipboard for use in another chat client.
 - In **Guided Reading**, choose the whole PDF, the current authored outline section, or a page range. The limit is 60 pages per guided run, with additional evidence and request limits. The confirmation reports the selected pages and maximum Copilot requests. Guide judgments use the question and source evidence across subjects.
+
+## Jump to a figure or table
+
+1. Click an underlined reference such as **Figure 3** in the body text. From the keyboard, tab to the reference and press Enter.
+2. If the PDF has an internal link, the reader follows it. Otherwise, it searches the local text index for the matching caption. If several captions match, choose by page number and snippet.
+3. Click **Back** to return to your original page, scroll position, and zoom.
+
+Caption lookup relies on selectable text. If a caption is embedded in a scanned page, run **OCR this page** on that page first. Unusual caption formats may require using **Find** or the page number field.
+
+## Listen in Guided Reading
+
+Open a guided explanation and click **Read aloud** below it. Kokoro uses the speed selected in the PDF toolbar. The supporting passage stays highlighted while the explanation plays. Automatic advancement pauses when narration starts. Switching passages stops narration. Use **Listen** in the PDF toolbar to hear the source text itself. [Kokoro setup](../experiments/KOKORO_VOICE_PROBE.md)
 
 ## Practice while reading
 
@@ -78,7 +90,11 @@ webview, word selection, and actual Copilot access.
 
 ## Release history
 
-The notes below describe the behavior of the indicated earlier versions.
+- **v0.8.2** adds local figure and table navigation with return-to-position.
+- **v0.8.1** adds offline Read Aloud to Guided Reading explanations.
+- **v0.8.0** adds follow-along PDF narration, understanding checks, saved review questions, and in-document definition lookup.
+
+The remaining notes describe earlier versions.
 
 ## Tutor discussions and formatted explanations (v0.2 experiment)
 

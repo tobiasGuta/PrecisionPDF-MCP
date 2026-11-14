@@ -5,7 +5,8 @@ const el = (id) => document.getElementById(id);
 const stage = el("stage");
 const overlay = el("overlay");
 const reader = stage.parentElement;
-const guidedUI = globalThis.setupPrecisionPDFGuided({ host, el, overlay, highlight, scope: guideScope, remember });
+const guidedUI = globalThis.setupPrecisionPDFGuided({ host, el, overlay, highlight, scope: guideScope, remember,
+  stopNarration: () => speechUI.stopTurn("guide") });
 const findUI = globalThis.setupPrecisionPDFFind({ host, el, highlight, remember,
   clear: () => clearHighlight("found") });
 const speechUI = globalThis.setupPrecisionPDFSpeech({ host, onSpan: followSpeech });
@@ -28,6 +29,8 @@ let locations = [];
 let restoreScroll = null;
 let turnFailed = false;
 let positionTimer;
+let referencePending = false;
+let referenceOrigin = null;
 
 function requestSource() {
   return { page: page?.page, fingerprint: page?.sha256,
@@ -44,9 +47,13 @@ reader.addEventListener("scroll", () => {
   positionTimer = setTimeout(savePosition, 150);
 });
 
-function remember() {
+function readingPosition() {
+  return { page: page.page, scroll: reader.scrollTop, left: reader.scrollLeft, zoom, fingerprint: page.sha256 };
+}
+
+function remember(position) {
   if (!page || loading) return;
-  const position = { page: page.page, scroll: reader.scrollTop, left: reader.scrollLeft, zoom, fingerprint: page.sha256 };
+  position ||= readingPosition();
   const last = locations.at(-1);
   if (last?.page === position.page && last.scroll === position.scroll && last.left === position.left) return;
   locations.push(position);
@@ -123,6 +130,7 @@ function setControls() {
   el("definitionStart").disabled = !selected || term.length > 120 || term.split(/\s+/).length > 12;
   el("studyGuide").hidden = loading || !guideSource || guideSource.page !== page?.page ||
     guideSource.fingerprint !== page.sha256;
+  el("guideSpeech").hidden = el("studyGuide").hidden || !guideSource.narrationAvailable;
   el("ask").disabled = loading || answering || !page;
   el("prev").disabled = loading || answering || !page || page.page <= 1;
   el("next").disabled = loading || answering || !page || page.page >= page.pages;
@@ -133,6 +141,12 @@ el("selectionSpeech").appendChild(speechUI.createControls(0, () => {
   return { type: selectionText() ? "readSelection" : "readPage", ...requestSource(),
     speed: Number(el("listenSpeed").value) };
 }));
+el("guideSpeech").appendChild(speechUI.createControls("guide", () => {
+  guidedUI.pause();
+  return { type: "speechGuide", evidenceId: guideSource?.evidenceId,
+    speed: Number(el("listenSpeed").value) };
+}, "Read aloud"));
+speechUI.complete("guide", true);
 el("studyGuide").addEventListener("click", () => {
   if (!guideSource) return;
   studyUI.start({ page: guideSource.page, fingerprint: guideSource.fingerprint,
@@ -190,6 +204,7 @@ function render(data, restore) {
   const left = restoreScroll?.left || 0;
   const image = el("pageImage");
   page = data;
+  if (!referencePending) { referenceOrigin = null; closeReferenceResults(); }
   loading = false;
   setZoom(restoreScroll?.zoom ?? zoom);
   restoreScroll = null;
@@ -222,13 +237,31 @@ function render(data, restore) {
   el("next").disabled = data.page >= data.pages;
   overlay.replaceChildren();
   const fragment = document.createDocumentFragment();
+  const { pageReferences, referenceAt, captionAt } = globalThis.precisionPDFReferences;
+  const rows = pageReferences(data);
+  const references = new Map();
+  for (let index = 0; index < rows.length; index++) {
+    const item = referenceAt(rows, index);
+    if (!item || captionAt(rows, index)) continue;
+    for (let word = item.start; word <= item.end; word++) references.set(word, item);
+    index = item.end;
+  }
   data.words.forEach((word, index) => {
     const [x0, y0, x1, y1, text] = word;
     const box = document.createElement("span");
     box.className = "word";
     box.dataset.index = String(index);
-    box.title = text;
-    box.setAttribute("aria-label", text);
+    const reference = references.get(index);
+    box.title = reference ? "Go to " + reference.label : text;
+    if (reference) {
+      box.classList.add("reference");
+      box.dataset.reference = reference.start;
+      if (index === reference.start) {
+        box.tabIndex = 0;
+        box.setAttribute("role", "link");
+      }
+    }
+    box.setAttribute("aria-label", reference ? "Go to " + reference.label : text);
     box.style.left = (100 * x0 / data.width) + "%";
     box.style.top = (100 * y0 / data.height) + "%";
     box.style.width = (100 * (x1 - x0) / data.width) + "%";
@@ -264,9 +297,47 @@ overlay.addEventListener("pointerover", (event) => {
     drawSelection();
   }
 });
-window.addEventListener("pointerup", () => {
+function followReference(start) {
+  if (!page || loading || answering || referencePending) return;
+  referenceOrigin = readingPosition();
+  resetSelection();
+  currentContext = "";
+  updateComposerContext();
+  guidedUI.pause();
+  speechUI.stop();
+  el("referenceList").replaceChildren();
+  el("referenceResults").hidden = false;
+  el("referenceStatus").textContent = "Looking for the caption…";
+  referencePending = true;
+  host.postMessage({ type: "referenceStart", start, page: page.page, fingerprint: page.sha256, zoom });
+}
+
+function closeReferenceResults() {
+  el("referenceResults").hidden = true;
+  el("referenceList").replaceChildren();
+}
+
+el("referenceClose").addEventListener("click", () => {
+  if (!referencePending) closeReferenceResults();
+});
+
+overlay.addEventListener("keydown", event => {
+  const start = event.target.dataset.reference;
+  if (start !== undefined && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    followReference(Number(start));
+  }
+});
+
+window.addEventListener("pointerup", event => {
   if (!dragging) return;
   dragging = false;
+  const word = event.target?.closest?.(".word");
+  if (selectedStart === selectedEnd && word?.dataset.index === String(selectedStart) &&
+      word.dataset.reference !== undefined) {
+    followReference(Number(word.dataset.reference));
+    return;
+  }
   const selection = selectionText();
   currentContext = selection;
   updateComposerContext();
@@ -283,7 +354,10 @@ el("assistantToggle").addEventListener("click", event => {
   panel.hidden = !show;
   panel.parentElement.classList.toggle("reading-only", !show);
   event.currentTarget.setAttribute("aria-pressed", String(show));
-  if (!show) guidedUI.pause();
+  if (!show) {
+    guidedUI.pause();
+    speechUI.stopTurn("guide");
+  }
 });
 
 el("pageNumber").addEventListener("keydown", event => {
@@ -439,11 +513,59 @@ window.addEventListener("message", (event) => {
   const message = event.data;
   if (!message || typeof message !== "object") return;
   if (speechUI.onMessage(message) || studyUI.onMessage(message)) return;
+  if (message.type === "reference-progress") {
+    el("referenceStatus").textContent = message.message;
+    return;
+  }
+  if (message.type === "reference-error") {
+    referencePending = false;
+    el("referenceStatus").textContent = message.message;
+    el("referenceResults").hidden = false;
+    return;
+  }
+  if (message.type === "reference-leaving") {
+    remember(referenceOrigin);
+    return;
+  }
+  if (message.type === "reference-plan") {
+    referencePending = false;
+    const { steps } = message.plan;
+    el("referenceStatus").textContent = steps.length ? "Choose a caption for " + message.label :
+      "No matching caption found for " + message.label + ".";
+    el("referenceList").replaceChildren(...steps.map((step, number) => {
+      const button = document.createElement("button");
+      button.textContent = "Page " + step.page + " · " + step.quote;
+      button.addEventListener("click", () => {
+        if (loading || answering || referencePending) return;
+        referencePending = true;
+        host.postMessage({ type: "referenceGoto", number, zoom });
+      });
+      return button;
+    }));
+    return;
+  }
+  if (message.type === "reference-activate" || message.type === "reference-link") {
+    referencePending = false;
+    referenceOrigin = null;
+    if (message.fingerprint !== page?.sha256) return;
+    closeReferenceResults();
+    if (message.step && highlight(message, "found")) return;
+    if (message.type === "reference-link" && message.page === page.page && message.to) {
+      const [x, y] = message.to;
+      reader.scrollTo({
+        top: Math.max(0, stage.offsetTop + y / page.height * stage.clientHeight - 12),
+        left: Math.max(0, stage.offsetLeft + x / page.width * stage.clientWidth - reader.clientWidth * 0.15)
+      });
+    }
+    return;
+  }
   if (message.type === "guide-activate") {
-    guideSource = { ...message.step, fingerprint: message.fingerprint };
+    speechUI.stopTurn("guide");
+    guideSource = { ...message.step, fingerprint: message.fingerprint, narrationAvailable: message.narrationAvailable };
     setControls();
   }
   if (["guide-clear", "guide-plan", "guide-error", "reader-text-changed"].includes(message.type)) {
+    speechUI.stopTurn("guide");
     guideSource = null;
     setControls();
   }

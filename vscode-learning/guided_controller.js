@@ -2,18 +2,20 @@
 
 const { prepareBatches, generateGuide } = require("./guide");
 const { resolveQuery, findExactMentions, findDefinitions } = require("./search");
+const { referenceAt, captionAt, pageReferences, authoredLink, findCaptions } = require("./media/references");
 const { readerProcess, fileVersion } = require("./reader_process");
 
 function attachGuidedReading({ vscode, backend, send, load, currentPage, ocrPages, panel, tutoringBusy }) {
   let searchCache = null;
   const plans = new Map();
   let active = null;
+  let activeGuideStep = null;
 
-  async function verifySource(step, fingerprint) {
+  async function verifySource(step, fingerprint, zoom) {
     if (tutoringBusy()) throw new Error("Wait for the current explanation to finish.");
     const version = await fileVersion(backend);
     const target = currentPage();
-    const page = target?.page === step.page && target.fileVersion === version ? target : await load(step.page);
+    const page = target?.page === step.page && target.fileVersion === version ? target : await load(step.page, { zoom });
     if (!page || currentPage() !== page || page.page !== step.page || page.sha256 !== fingerprint) {
       throw new Error("The PDF changed or the source is unavailable. The saved text is still available.");
     }
@@ -21,13 +23,16 @@ function attachGuidedReading({ vscode, backend, send, load, currentPage, ocrPage
     if (quote !== step.quote) throw new Error("The original source words could not be verified on this page.");
   }
 
-  async function activateStep(channel, number) {
+  async function activateStep(channel, number, zoom) {
     const plan = plans.get(channel);
-    const step = plan?.steps[number];
+    const step = Number.isInteger(number) ? plan?.steps[number] : null;
     if (!step) throw new Error("Choose another result.");
-    await verifySource(step, plan.fingerprint);
+    if (channel === "reference") send({ type: "reference-leaving" });
+    await verifySource(step, plan.fingerprint, zoom);
     if (plans.get(channel) !== plan) return;
-    send({ type: channel + "-activate", number, step, fingerprint: plan.fingerprint });
+    if (channel === "guide") activeGuideStep = step;
+    send({ type: channel + "-activate", number, step, fingerprint: plan.fingerprint,
+      narrationAvailable: channel === "guide" && plan.type === "guided" && Boolean(step.explanation) });
   }
 
   async function localIndex(signal, progress, ocr, revision) {
@@ -41,6 +46,45 @@ function attachGuidedReading({ vscode, backend, send, load, currentPage, ocrPage
     return searchCache.index;
   }
 
+  async function followReference(message, signal, progress) {
+    const page = currentPage();
+    const version = await fileVersion(backend);
+    signal.throwIfAborted();
+    if (!page || page !== currentPage() || page.fileVersion !== version ||
+        message.page !== page.page || message.fingerprint !== page.sha256) {
+      throw new Error("The source page changed. Click the reference again.");
+    }
+    const rows = pageReferences(page);
+    const reference = Number.isInteger(message.start) && rows[message.start] && referenceAt(rows, message.start);
+    if (!reference) throw new Error("This figure or table reference is no longer available.");
+    const link = authoredLink(page, reference);
+    if (link) {
+      send({ type: "reference-leaving" });
+      const target = link.page === page.page ? page : await load(link.page, { zoom: message.zoom });
+      signal.throwIfAborted();
+      if (!target || currentPage() !== target || target.sha256 !== page.sha256) {
+        throw new Error("The PDF link could not be opened.");
+      }
+      const targetRows = pageReferences(target);
+      const captions = targetRows.map((_, index) => captionAt(targetRows, index))
+        .filter(item => item?.label === reference.label);
+      send({ type: "reference-link", fingerprint: target.sha256, page: target.page, to: link.to,
+        step: captions.length === 1 ? { ...captions[0], page: target.page } : null });
+      return;
+    }
+
+    const { revision, pages: ocr } = await ocrPages();
+    const index = await localIndex(signal, progress, ocr, revision);
+    signal.throwIfAborted();
+    if (page !== currentPage() || index.sha256 !== page.sha256) {
+      throw new Error("The source page changed. Click the reference again.");
+    }
+    const plan = findCaptions(index, reference.label);
+    plans.set("reference", plan);
+    if (plan.steps.length === 1) await activateStep("reference", 0, message.zoom);
+    else send({ type: "reference-plan", plan, label: reference.label });
+  }
+
   async function start(channel, message) {
     if (active || tutoringBusy()) {
       send({ type: channel + "-error", message: "Finish or cancel the current request first." });
@@ -51,7 +95,12 @@ function attachGuidedReading({ vscode, backend, send, load, currentPage, ocrPage
     const { signal } = operation.abort;
     const progress = message => send({ type: channel + "-progress", message });
     plans.delete(channel);
+    if (channel === "guide") activeGuideStep = null;
     try {
+      if (channel === "reference") {
+        await followReference(message, signal, progress);
+        return;
+      }
       const question = String(message.question || "").trim().slice(0, 800);
       const route = resolveQuery(question, channel !== "guide" ? "exact" : (message.approach || "auto"));
       const { revision, pages: ocr } = await ocrPages();
@@ -130,16 +179,19 @@ function attachGuidedReading({ vscode, backend, send, load, currentPage, ocrPage
   }
 
   function handle(message) {
-    const channel = message.type.startsWith("definition") ? "definition" : message.type.startsWith("find") ? "find" : "guide";
+    const channel = message.type.startsWith("reference") ? "reference"
+      : message.type.startsWith("definition") ? "definition" : message.type.startsWith("find") ? "find" : "guide";
     switch (message.type) {
+      case "referenceStart":
       case "definitionStart":
       case "findStart":
       case "guideStart": void start(channel, message); return true;
       case "guideRelated": void start(channel, { ...message, approach: "guided" }); return true;
+      case "referenceGoto":
       case "definitionGoto":
       case "findGoto":
       case "guideGoto":
-        void activateStep(channel, message.number).catch(error => {
+        void activateStep(channel, message.number, message.zoom).catch(error => {
           send({ type: channel + "-error", message: error.message });
         });
         return true;
@@ -150,7 +202,17 @@ function attachGuidedReading({ vscode, backend, send, load, currentPage, ocrPage
   }
 
   panel.onDidDispose(cancel);
-  return { handle, verifySource, isWorking: () => Boolean(active) };
+  function guideExplanation(evidenceId) {
+    const plan = plans.get("guide");
+    const page = currentPage();
+    if (plan?.type !== "guided" || !activeGuideStep || activeGuideStep.evidenceId !== evidenceId ||
+        page?.page !== activeGuideStep.page || page.sha256 !== plan.fingerprint) return "";
+    const quote = page.words.slice(activeGuideStep.start_word, activeGuideStep.end_word + 1)
+      .map(word => word[4]).join(" ");
+    return quote === activeGuideStep.quote ? activeGuideStep.explanation : "";
+  }
+
+  return { handle, verifySource, guideExplanation, isWorking: () => Boolean(active) };
 }
 
 module.exports = { attachGuidedReading };

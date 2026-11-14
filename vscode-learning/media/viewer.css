@@ -170,3 +170,9 @@ main.reading-only { grid-template-columns: minmax(0, 1fr); }
   .workbench { flex-wrap: wrap; }
   .study-toolbar { flex-wrap: wrap; }
 }
+
+.word.reference { cursor: pointer; border-bottom: 1px dotted #245bb2; }
+.word.reference:hover { background: #4b91ff46; }
+#referenceResults { margin-top: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+#referenceList { display: grid; max-height: 140px; overflow: auto; }
+#referenceList button { text-align: left; }

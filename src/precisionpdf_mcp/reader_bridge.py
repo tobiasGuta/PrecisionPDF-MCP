@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import math
 import sys
 
 import pymupdf
@@ -16,6 +17,24 @@ import pymupdf
 from .core import AnnotationError, PDFWorkspace
 from .guided_index import file_sha256, _bookmarks
 from .reader_text import read_words, display_box
+
+
+def _internal_links(page, page_count):
+    # PyMuPDF reports GoTo rectangles and destinations in rotated page coordinates.
+    links = []
+    for link in page.get_links():
+        if link["kind"] != pymupdf.LINK_GOTO or not 0 <= link.get("page", -1) < page_count:
+            continue
+        area = link["from"]
+        target = link.get("to")
+        if area.is_empty or not all(map(math.isfinite, area)):
+            continue
+        links.append({
+            "from": list(area),
+            "page": link["page"] + 1,
+            "to": list(target) if target is not None and all(map(math.isfinite, target)) else None,
+        })
+    return links
 
 
 def read_learning_page(root: str, filename: str, number: int, ocr_language=None, zoom=1.5, *, outline=False, cached=None) -> dict:
@@ -52,6 +71,8 @@ def read_learning_page(root: str, filename: str, number: int, ocr_language=None,
             "width": width,
             "height": height,
             "words": boxes,
+            "word_lines": [list(word[5:7]) for word in words],
+            "internal_links": _internal_links(page, len(document)),
             "text": text[:12000],
             "text_truncated": len(text) > 12000,
             "png_base64": base64.b64encode(preview).decode("ascii"),

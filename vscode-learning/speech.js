@@ -47,7 +47,8 @@ class SpeechService {
     if (this.closed) return;
     this.stop();
     const text = verbatim ? markdown.trim() : plainSpeech(markdown);
-    if (!Number.isSafeInteger(turnId) || turnId < 0 || !text || text.length > (source ? 24000 : MAX_TEXT)) {
+    const validTurn = turnId === "guide" || (Number.isSafeInteger(turnId) && turnId >= 0);
+    if (!validTurn || !text || text.length > (source ? 24000 : MAX_TEXT)) {
       this.send({ type: "speech-error", turnId,
         message: source ? "This page is too long to narrate at once. Select a passage." :
           "Narration currently supports text up to 3,500 characters." });
@@ -123,7 +124,10 @@ class SpeechService {
       }
     });
     proc.stdin.on("error", (error) => fail("Voice worker input failed: " + error.message));
-    proc.stdin.end(JSON.stringify(source ? { text, follow: true, speed: [0.8, 1, 1.2].includes(speed) ? speed : 1 } : { text }) + "\n");
+    const request = { text };
+    if (source) request.follow = true;
+    if (speed === 0.8 || speed === 1.2) request.speed = speed;
+    proc.stdin.end(JSON.stringify(request) + "\n");
   }
 }
 

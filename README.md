@@ -2,7 +2,7 @@
 
 A local PDF toolkit combining a **PrecisionPDF MCP server** for reviewable PDF annotations with an optional **VS Code Learning Mode** for interactive reading, exact document search, and Copilot-assisted explanations.
 
-> **Current components:** the MCP annotation server and the experimental **PrecisionPDF Learning Mode v0.8.0** VS Code extension. Learning Mode has been tested on real course PDFs through the VS Code Extension Development Host. It is **not** a published VS Code Marketplace extension.
+> **Current components:** the MCP annotation server and the experimental **PrecisionPDF Learning Mode v0.8.2** VS Code extension. Learning Mode has been tested on real course PDFs through the VS Code Extension Development Host. It is **not** a published VS Code Marketplace extension.
 
 ## Features
 
@@ -14,9 +14,9 @@ A local PDF toolkit combining a **PrecisionPDF MCP server** for reviewable PDF a
 - Confine all PDF and image I/O to a single workspace directory (including symlink resolution).
 - Refuse accidental original-file overwrite. Only explicitly update `*-annotated.pdf` copies.
 - Atomic replacement when saving an annotated working copy, so Okular can reload after each save.
-- Optional read-only VS Code reader with saved reading position, local Find and definition lookup, page OCR, and page-aware Copilot tutoring.
+- Optional read-only VS Code reader with saved reading position, figure and table jumps, local Find and definition lookup, page OCR, and page-aware Copilot tutoring.
 - Guided explanations for a PDF, section, or page range with source highlights. Understanding checks and saved review questions link back to the original passage.
-- Offline Kokoro narration for a page, selection, or tutor response, with follow-along highlighting when reading the PDF.
+- Offline Kokoro narration for a page, selection, tutor response, or Guided Reading explanation, with follow-along highlighting when reading the PDF.
 
 ## Local VS Code installation
 
@@ -107,7 +107,7 @@ If the extension cannot find the repository, set `precisionpdfLearning.repositor
 - Guided analysis can use the whole PDF, an outline section, or a page range. Each run has limits of **60 pages**, **350,000 indexed characters**, **1,600 excerpts**, and **30 analysis batches**, plus synthesis and relevance-review requests. Oversized documents are rejected rather than summarized as though fully analyzed.
 - Neither mode changes the original PDF. To **save** a highlight or change an existing one, use the separate MCP annotation tools.
 
-See the [reader guide](vscode-learning/README.md#reading-a-pdf), [study and review guide](vscode-learning/README.md#practice-while-reading), and [offline audio setup](experiments/KOKORO_VOICE_PROBE.md).
+See the [reader guide](vscode-learning/README.md#reading-a-pdf), [figure and table navigation](vscode-learning/README.md#jump-to-a-figure-or-table), [study and review guide](vscode-learning/README.md#practice-while-reading), and [offline audio setup](experiments/KOKORO_VOICE_PROBE.md).
 
 ### Test Learning Mode
 

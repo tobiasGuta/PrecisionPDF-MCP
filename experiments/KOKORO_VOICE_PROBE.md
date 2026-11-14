@@ -1,6 +1,6 @@
 # PrecisionPDF — offline Kokoro voice experiment
 
-The CPU-only Kokoro setup powers the extension’s **Read selection** and **Read aloud** controls. The standalone probe can also compare voice quality and latency. Download the voice assets during setup, then use the controls to generate speech on demand.
+The CPU-only Kokoro setup powers the extension’s **Listen** and **Read aloud** controls. The standalone probe can also compare voice quality and latency. Download the voice assets during setup, then use the controls to generate speech on demand.
 
 ## Fedora setup (isolated; does not change the existing PrecisionPDF Python environment)
 
@@ -58,9 +58,9 @@ Each output filename is protected against accidental overwrite (use `--overwrite
 1. Use the Kokoro setup above on the machine running the extension host. The worker loads the model and voice pack from `~/.cache/precisionpdf-kokoro` and runs with that folder’s Python environment.
 2. Open a PDF and click **Listen** to hear the current page. Select words first to hear only that passage.
 3. Choose 0.8×, 1×, or 1.2× before starting. Enable **Follow audio** to highlight the segment playing on the page. Use **Pause**, **Resume**, or **Stop** during playback. Navigating to another page stops narration.
-4. To hear a completed manual tutor response, click **Read aloud** under the answer.
+4. To hear a completed manual tutor response, click **Read aloud** under the answer. Guided Reading has the same control under the active explanation. Starting it pauses automatic advancement, and switching passages stops narration.
 
-The extension uses the English `af_heart` voice on CPU. Kokoro synthesizes audio locally and streams chunks to the webview in memory. This action uses no Copilot requests. PDF narration supports up to 24,000 characters per page and 3,500 per selection. Tutor narration supports up to 3,500 characters after plain-text conversion. Scanned pages need OCR before their text can be narrated.
+The extension uses the English `af_heart` voice on CPU. Kokoro synthesizes audio locally and streams chunks to the webview in memory. This action uses no Copilot requests. PDF narration supports up to 24,000 characters per page and 3,500 per selection. Tutor and guide narration support up to 3,500 characters after plain-text conversion. Scanned pages need OCR before their text can be narrated.
 
 If speech fails to start, check that the Python environment, model, and voice files exist at the setup paths above and that VS Code points to the matching backend clone. The standalone voice probe can verify the installation independently of VS Code.
 

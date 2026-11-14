@@ -1,7 +1,7 @@
 "use strict";
 
 // The guide highlights the existing read-only PDF word overlay, not PDF annotations.
-function setupGuidedUI({ host, el, overlay, highlight, scope = () => ({}), remember = () => {} }) {
+function setupGuidedUI({ host, el, overlay, highlight, scope = () => ({}), remember = () => {}, stopNarration = () => {} }) {
   const guide = { fingerprint: null, plan: null, index: -1, playing: false, timer: null, pending: false, showBroader: false };
   const panel = el("guidePanel");
 
@@ -51,6 +51,7 @@ function setupGuidedUI({ host, el, overlay, highlight, scope = () => ({}), remem
   function go(number) {
     if (!guide.plan || guide.pending || number < 0 || number >= visibleCount()) return;
     clearClock();
+    stopNarration();
     guide.pending = true;
     remember();
     host.postMessage({ type: "guideGoto", number });
@@ -69,11 +70,12 @@ function setupGuidedUI({ host, el, overlay, highlight, scope = () => ({}), remem
     el("guidedMode").setAttribute("aria-pressed", String(guided));
     panel.hidden = !guided;
     el("tutorPane").classList.toggle("mode-guide", guided);
-    if (!guided) { pause(); overlay.querySelectorAll(".word.guided").forEach(n => n.classList.remove("guided")); }
+    if (!guided) { stopNarration(); pause(); overlay.querySelectorAll(".word.guided").forEach(n => n.classList.remove("guided")); }
     else applyHighlight();
   }
 
   function clearResults() {
+    stopNarration();
     pause();
     guide.plan = null; guide.fingerprint = null; guide.index = -1; guide.pending = false; guide.showBroader = false;
     el("guideResults").hidden = true;
@@ -122,6 +124,7 @@ function setupGuidedUI({ host, el, overlay, highlight, scope = () => ({}), remem
     el("guideBroaderToggle").setAttribute("aria-expanded", String(guide.showBroader));
     el("guideBroaderToggle").textContent = guide.showBroader ? "Hide contextual examples" : "Show contextual examples";
     if (!guide.showBroader && guide.index >= guide.plan.directCount) {
+      stopNarration();
       guide.index = -1;
       el("guideActive").hidden = true;
       overlay.querySelectorAll(".word.guided").forEach(n => n.classList.remove("guided"));
@@ -138,6 +141,7 @@ function setupGuidedUI({ host, el, overlay, highlight, scope = () => ({}), remem
   el("guidePlay").addEventListener("click", () => {
     if (!guide.plan) return;
     if (guide.playing) { pause(); return; }
+    stopNarration();
     if (guide.index >= visibleCount() - 1) go(0);
     guide.playing = true;
     el("guidePlay").textContent = "Pause";

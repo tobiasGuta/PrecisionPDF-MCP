@@ -88,6 +88,7 @@ function makeHtml(context, webview) {
     .replaceAll("{{SPEECH_JS}}", uri("speech-viewer.js"))
     .replaceAll("{{FIND_JS}}", uri("find-viewer.js"))
     .replaceAll("{{STUDY_JS}}", uri("study-viewer.js"))
+    .replaceAll("{{REFERENCES_JS}}", uri("references.js"))
     .replaceAll("{{JS}}", uri("viewer.js"));
 }
 
@@ -299,6 +300,12 @@ async function openLearningMode(context, uri) {
   panel.webview.onDidReceiveMessage((message) => {
     if (!message || typeof message.type !== "string") return;
     if (guided.handle(message) || study.handle(message)) return;
+    if (message.type === "speechGuide") {
+      const text = pageRequest ? "" : guided.guideExplanation(message.evidenceId);
+      if (text) speech.speak("guide", text, { speed: message.speed });
+      else send({ type: "speech-error", turnId: "guide", message: "Open a guided passage to hear its explanation." });
+      return;
+    }
     if (message.type === "speechSpeak") {
       const answer = answers.get(message.turnId);
       if (answer) speech.speak(message.turnId, answer);

@@ -56,3 +56,27 @@ def test_rotated_pages_have_rotated_word_boxes(tmp_path):
     assert result["width"] > result["height"]
     assert result["words"][0][4] == "Rotated"
     assert result["words"][0][1] == 50
+
+
+def test_reader_returns_internal_links_and_ignores_external_actions(tmp_path):
+    filename = "references.pdf"
+    with pymupdf.open() as doc:
+        doc.new_page()
+        doc.new_page()
+        page = doc[0]
+        page.insert_text((50, 100), "Figure 3")
+        area = pymupdf.Rect(50, 85, 91, 105)
+        page.insert_link({"kind": pymupdf.LINK_GOTO, "from": area, "page": 1,
+                          "to": pymupdf.Point(55, 200)})
+        page.insert_link({"kind": pymupdf.LINK_URI, "from": area, "uri": "https://example.org"})
+        page.set_rotation(90)
+        doc[1].set_rotation(90)
+        doc.save(tmp_path / filename)
+    rendered = read_learning_page(str(tmp_path), filename, 1)
+    assert len(rendered["internal_links"]) == 1
+    link = rendered["internal_links"][0]
+    assert link["page"] == 2
+    assert link["to"] == [642, 55]
+    assert rendered["word_lines"] == [[0, 0], [0, 0]]
+    x0, y0, x1, y1, _ = rendered["words"][0]
+    assert pymupdf.Point((x0 + x1) / 2, (y0 + y1) / 2) in pymupdf.Rect(link["from"])

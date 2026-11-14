@@ -140,14 +140,13 @@ function setupPrecisionPDFSpeech({ host, onSpan = () => {} }) {
     host.postMessage(requests.get(turnId)?.() || { type: "speechSpeak", turnId });
   }
 
-  function createControls(turnId, request) {
+  function createControls(turnId, request, idleLabel = request ? "Listen" : "Read aloud") {
     if (request) requests.set(turnId, request);
     const root = document.createElement("div");
     root.className = "speech-controls";
     root.hidden = true;
     const toggle = document.createElement("button");
     toggle.type = "button";
-    const idleLabel = request ? "Listen" : "Read aloud";
     toggle.textContent = idleLabel;
     toggle.title = "Narrate locally using Kokoro";
     const stopButton = document.createElement("button");
@@ -194,7 +193,7 @@ function setupPrecisionPDFSpeech({ host, onSpan = () => {} }) {
 
   function clear() {
     stop();
-    for (const id of entries.keys()) if (id !== 0) entries.delete(id);
+    for (const id of entries.keys()) if (typeof id === "number" && id > 0) entries.delete(id);
   }
 
   function onMessage(message) {
@@ -221,6 +220,10 @@ function setupPrecisionPDFSpeech({ host, onSpan = () => {} }) {
       entry.toggle.disabled = activeId !== turnId && !available;
     }
   }
-  return { createControls, complete, clear, stop, onMessage, setAvailable };
+  function stopTurn(turnId) {
+    if (activeId === turnId) stop();
+  }
+
+  return { createControls, complete, clear, stop, stopTurn, onMessage, setAvailable };
 }
 globalThis.setupPrecisionPDFSpeech = setupPrecisionPDFSpeech;

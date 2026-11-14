@@ -73,3 +73,20 @@ test("extension initializes speech after the webview sender", () => {
   const ext = fs.readFileSync(require("node:path").join(__dirname, "..", "extension.js"), "utf8");
   assert(ext.indexOf("const send = (message)") < ext.indexOf("const speech = new SpeechService"));
 });
+
+test("guided explanations use local speech at the selected speed", () => {
+  const child = new FakeChild();
+  const messages = [];
+  const speech = new SpeechService({
+    repo: "/tmp/precisionpdf", fileExists: () => true, processFactory: () => child,
+    send: message => messages.push(message)
+  });
+  try {
+    speech.speak("guide", "**The source explains a concept.**", { speed: 0.8 });
+    assert.deepEqual(JSON.parse(child.input), { text: "The source explains a concept.", speed: 0.8 });
+    child.reply({ type: "audio", data: "UklGRg==" });
+    assert.deepEqual(messages.at(-1), { type: "speech-audio", turnId: "guide", data: "UklGRg==" });
+  } finally {
+    speech.dispose();
+  }
+});

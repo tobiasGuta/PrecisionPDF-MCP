@@ -57,6 +57,13 @@
           </div>
           <div id="definitionList"></div>
         </div>
+        <div id="referenceResults" hidden>
+          <div class="discussion-heading">
+            <p id="referenceStatus" role="status"></p>
+            <button id="referenceClose">Close</button>
+          </div>
+          <div id="referenceList"></div>
+        </div>
         <div id="notice" role="status">Loading your PDF…</div>
         <div class="actions selection-actions" aria-label="Passage tools">
           <button id="quote" disabled>Copy quote</button>
@@ -158,12 +165,13 @@
           <button id="guideRelated" hidden>Explore related ideas with Copilot</button>
           <div class="guide-controls">
             <button id="guidePrev" disabled>Previous</button>
-            <button id="guidePlay">Play</button>
+            <button id="guidePlay" title="Automatically advance to the next passage">Play</button>
             <button id="guideNext" disabled>Next</button>
           </div>
           <div id="guideActive" hidden>
             <h3 id="guideActiveTitle"></h3>
             <p id="guideActiveExplanation"></p>
+            <div id="guideSpeech" hidden></div>
             <p class="hint" id="guideEvidenceRelation"></p>
             <p class="hint" id="guideEvidenceReview"></p>
             <div class="guide-source"><strong>Source passage</strong><p id="guideActiveQuote"></p></div>
@@ -212,6 +220,7 @@
   <script nonce="{{NONCE}}" src="{{GUIDE_JS}}"></script>
   <script nonce="{{NONCE}}" src="{{SPEECH_JS}}"></script>
   <script nonce="{{NONCE}}" src="{{FIND_JS}}"></script>
+  <script nonce="{{NONCE}}" src="{{REFERENCES_JS}}"></script>
   <script nonce="{{NONCE}}" src="{{JS}}"></script>
 </body>
 </html>
