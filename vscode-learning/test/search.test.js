@@ -72,7 +72,7 @@ test("fail closed on incomplete or inconsistent PDF word index", () => {
 
 test("short strict phrases reject empty input and oversized queries", () => {
   assert.throws(() => findExactMentions(index(), ""), /valid exact phrase/);
-  assert.throws(() => resolveQuery("one two three four five six seven eight nine ten eleven twelve thirteen", "exact"), /short exact phrase/);
+  assert.throws(() => resolveQuery("one two three four five six seven eight nine ten eleven twelve thirteen", "exact"), /exact phrase of up to 12 words/);
 });
 
 test("model-upload path is separate from exact local search", () => {
@@ -82,7 +82,7 @@ test("model-upload path is separate from exact local search", () => {
   assert.match(controller, /route\.kind === "exact"/);
   assert.ok(controller.indexOf('route.kind === "exact"') < controller.indexOf("showWarningMessage("));
   assert.match(controller,/findExactMentions\(index, route\.phrase\)/);
-  assert.match(controller,/message\.type === "guideRelated"/);
+  assert.match(controller,/case "guideRelated"/);
 });
 
 test("short bare phrases and quoted phrases run exact local search in Automatic mode", () => {
@@ -102,4 +102,26 @@ test("questions and explanation commands are not silently routed to literal sear
   ]) {
     assert.equal(resolveQuery(input).kind,"guided",input);
   }
+});
+
+test("reader search retains punctuation, rejoins line breaks and reports skipped pages", () => {
+  const index = { complete: true, pages: 2, skipped_pages: [2], sections: [],
+    word_pages: [[["C", 0, 0], ["C++", 0, 0], ["inter-", 0, 0], ["pretability", 0, 1]], []] };
+  assert.deepEqual(findExactMentions(index, "C++").steps.map(step => step.quote), ["C++"]);
+  const result = findExactMentions(index, "interpretability");
+  assert.equal(result.steps[0].quote, "inter- pretability");
+  assert.match(result.overview, /1 without selectable text skipped/);
+  assert.equal(resolveQuery("explain the basics", "exact").phrase, "explain the basics");
+});
+
+test("definition lookup returns original words and ignores incidental mentions", () => {
+  const { findDefinitions } = require("../search");
+  const index = { sha256: "test", word_pages: [
+    "The chapter discusses RAG.".split(" ").map(word => [word, 0]),
+    "Retrieval Augmented Generation (RAG) improves relevance.".split(" ").map(word => [word, 0]),
+    "A harness refers to the runtime around a model.".split(" ").map(word => [word, 0])
+  ] };
+  assert.equal(findDefinitions(index, "RAG").steps[0].page, 2);
+  assert.equal(findDefinitions(index, "harness").steps[0].quote, "harness refers to the runtime around a model.");
+  assert.equal(findDefinitions(index, "chapter").steps.length, 0);
 });

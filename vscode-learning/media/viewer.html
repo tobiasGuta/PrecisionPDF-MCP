@@ -8,21 +8,78 @@
   <link rel="stylesheet" href="{{CSS}}">
 </head>
 <body>
-  <header>
-    <div class="heading"><strong>PrecisionPDF</strong><span>Learning Mode · read only</span></div>
-    <div class="nav">
-      <button id="prev" title="Previous page">←</button>
-      <span id="pages">Loading…</span>
-      <button id="next" title="Next page">→</button>
-      <button id="clear" title="Clear selection">Clear selection</button>
+  <header class="workbench">
+    <div class="document">
+      <span class="document-type" aria-hidden="true">PDF</span>
+      <strong id="documentName">PrecisionPDF</strong>
+    </div>
+    <div class="study-toolbar">
+      <button id="studyResume" hidden>Resume check</button>
+      <button id="studyOpen">Review questions</button>
+      <button id="assistantToggle" aria-controls="tutorPane" aria-pressed="true">Study panel</button>
     </div>
   </header>
   <main>
-    <section class="reader" aria-label="PDF reader">
-      <div id="notice">Loading your PDF…</div>
-      <div id="stage" hidden>
-        <img id="pageImage" draggable="false" alt="Rendered PDF page">
-        <div id="overlay" aria-label="Select a passage by dragging across PDF words"></div>
+    <section class="reader-pane" aria-label="PDF reader">
+      <div class="reader-tools">
+        <div class="reader-toolbar">
+          <div class="page-controls" role="group" aria-label="Page navigation">
+            <button id="prev" aria-label="Previous page" title="Previous page (Left arrow)">‹</button>
+            <input id="pageNumber" type="number" min="1" value="1" aria-label="Go to PDF page">
+            <span id="pages">/ …</span>
+            <button id="next" aria-label="Next page" title="Next page (Right arrow)">›</button>
+          </div>
+          <div class="view-controls" role="group" aria-label="Document tools">
+            <button id="back">Back</button>
+            <select id="zoom" aria-label="Page zoom">
+              <option value="0">Fit width</option><option value="1">100%</option>
+              <option value="1.5">150%</option><option value="2">200%</option><option value="3">300%</option>
+            </select>
+            <select id="outline" aria-label="PDF outline" hidden></select>
+            <button id="findToggle" aria-controls="findBar" aria-expanded="false" title="Find in PDF (Ctrl+F)">Find</button>
+          </div>
+        </div>
+        <div id="findBar" hidden>
+          <form id="findForm">
+            <input id="findQuery" type="search" maxlength="120" placeholder="Find text in PDF" aria-label="Find text in PDF">
+            <button type="submit">Find</button>
+            <button id="findPrev" type="button" aria-label="Previous match" title="Previous match" disabled>↑</button>
+            <button id="findNext" type="button" aria-label="Next match" title="Next match" disabled>↓</button>
+            <button id="findCancel" type="button" hidden>Cancel</button>
+          </form>
+          <p id="findStatus" role="status"></p>
+          <select id="findMatches" aria-label="Search results" hidden></select>
+        </div>
+        <div id="definitionResults" hidden>
+          <div class="discussion-heading">
+            <p id="definitionStatus" role="status"></p>
+            <button id="definitionClose">Close</button>
+          </div>
+          <div id="definitionList"></div>
+        </div>
+        <div id="notice" role="status">Loading your PDF…</div>
+        <div class="actions selection-actions" aria-label="Passage tools">
+          <button id="quote" disabled>Copy quote</button>
+          <button id="pin" disabled>Pin passage</button>
+          <button id="clear" disabled>Clear selection</button>
+          <button id="studyStart" disabled>Check understanding</button>
+          <button id="definitionStart" disabled>Find definition</button>
+          <div id="selectionSpeech"></div>
+          <select id="listenSpeed" aria-label="Narration speed">
+            <option value="0.8">0.8×</option><option value="1" selected>1×</option><option value="1.2">1.2×</option>
+          </select>
+          <label><input type="checkbox" id="listenFollow" checked> Follow audio</label>
+        </div>
+        <div class="actions ocr-actions">
+          <button id="ocr" hidden>OCR this page</button>
+          <input id="ocrLanguage" aria-label="Tesseract language codes" title="Installed Tesseract language codes, for example eng or eng+spa" value="eng" maxlength="23" hidden>
+        </div>
+      </div>
+      <div class="reader" tabindex="0" aria-label="PDF page view">
+        <div id="stage" hidden>
+          <img id="pageImage" draggable="false" alt="Rendered PDF page">
+          <div id="overlay" aria-label="Select a passage by dragging across PDF words"></div>
+        </div>
       </div>
     </section>
     <aside class="tutor" id="tutorPane" aria-label="AI learning assistant">
@@ -31,48 +88,73 @@
         <button id="guidedMode" aria-pressed="false">Guided Reading</button>
       </div>
       <div class="tutor-scroll" id="tutorScroll">
-        <h2>Understand what you're reading</h2>
-        <p class="hint">Keep one discussion while reading the PDF. New questions use the current page or selected passage; earlier messages remain visible until you choose New discussion.</p>
-        <label>Selected passage</label>
-        <div id="selection" class="selection">No text selected. Questions will use the current page.</div>
-        <p class="privacy">Copilot model requests use your existing plan limits and are sent only when you click Ask. No separate API key is required.</p>
-        <h3>Discussion</h3>
-        <p id="threadStatus" class="hint" aria-live="polite">Select a passage and ask your first question.</p>
+        <div class="discussion-heading">
+          <h2>Discussion</h2>
+          <button id="newThread" title="Clear tutor history and start a new discussion">New discussion</button>
+        </div>
+        <div id="pins" aria-label="Pinned passages"></div>
         <div id="thread" class="thread" aria-label="Tutor discussion"></div>
+        <p id="threadEmpty" class="empty-note">Ask about the current page or highlight a passage to focus your question.</p>
       </div>
       <div class="composer" role="group" aria-label="Ask about the PDF">
-        <div class="composer-toolbar">
-          <span id="composerContext" class="composer-context">Page context · select text to focus</span>
-          <button id="newThread" title="Clear all tutor history and start a new discussion">New discussion</button>
+        <div class="composer-source">
+          <span id="composerContext">Opening PDF…</span>
+          <span class="scope-control">
+            <label for="tutorScope">Send to Copilot</label>
+            <select id="tutorScope">
+              <option value="page">Page, pins &amp; recent chat</option>
+              <option value="selection">Selection only</option>
+            </select>
+          </span>
+          <blockquote id="selection" class="selection" hidden></blockquote>
         </div>
-        <label for="question">Ask a question or follow-up</label>
-        <textarea id="question" rows="3" placeholder="Ask a follow-up about this passage…">Explain this passage simply, with a practical example.</textarea>
-        <div class="actions">
+        <label for="question">Question</label>
+        <textarea id="question" rows="2" placeholder="What would you like to understand?">Explain this passage simply, with a practical example.</textarea>
+        <p id="threadStatus" class="hint" role="status"></p>
+        <div class="composer-actions">
+          <button id="copy">Copy prompt</button>
+          <button id="stopAsk" hidden>Stop</button>
           <button id="ask" class="primary">Ask with Copilot</button>
-          <button id="copy" title="Paste into Codex or Antigravity">Copy prompt</button>
+
         </div>
       </div>
       <section class="guide-panel" id="guidePanel" hidden aria-label="Guided Reading">
-        <h2>Guided Reading</h2>
-        <p class="hint">Find exact wording throughout the PDF without a model, or ask Copilot for selected supporting ideas and explanations. All highlights are temporary; your PDF is never edited.</p>
-        <label for="guideQuestion">What would you like to learn about this PDF?</label>
-        <textarea id="guideQuestion" rows="3" maxlength="800">What are the main ideas of this PDF? Explain them in order using evidence from the document.</textarea>
-        <label for="guideApproach">Search behavior</label>
-        <select id="guideApproach" aria-label="Choose how to search">
-          <option value="auto">Automatic: detect exact search or explanation</option>
-          <option value="exact">Find exact wording (local; no Copilot)</option>
-          <option value="guided">Guided explanation (Copilot)</option>
-        </select>
-        <div class="guide-actions">
-          <button id="guideStart" class="primary">Find / Analyze</button>
-          <button id="guideCancel" hidden>Cancel analysis</button>
+        <div class="guide-form">
+          <label for="guideQuestion">What are you looking for?</label>
+          <textarea id="guideQuestion" rows="3" maxlength="800">What are the main ideas in the chosen pages?</textarea>
+          <div class="guide-options">
+            <label>Method
+              <select id="guideApproach">
+                <option value="auto">Automatic</option>
+                <option value="exact">Exact wording · local</option>
+                <option value="guided">Explanation · Copilot</option>
+              </select>
+            </label>
+            <label>Pages for analysis
+              <select id="guideScope">
+                <option value="all">Whole PDF</option>
+                <option value="section">Current outline section</option>
+                <option value="range">Page range</option>
+              </select>
+            </label>
+          </div>
+          <div id="guideRange" class="guide-actions" hidden>
+            <label>From <input type="number" min="1" id="guideFirst"></label>
+            <label>To <input type="number" min="1" id="guideLast"></label>
+          </div>
+          <div class="guide-actions">
+            <p class="hint">Copilot asks before sending PDF text.</p>
+            <button id="guideCancel" hidden>Cancel</button>
+            <button id="guideStart" class="primary">Find / Analyze</button>
+          </div>
+          <p class="hint" id="guideStatus" role="status"></p>
         </div>
-        <p class="privacy">Exact wording search runs locally without a Copilot request. For guided explanations, your permission is required before sending extracted document text to Copilot.</p>
-        <p class="hint" id="guideStatus" role="status">Ready. Select Analyze PDF to begin.</p>
         <div id="guideResults" hidden>
-          <h3 id="guideOverviewTitle">Document overview</h3>
-          <p id="guideOverview"></p>
-          <p class="hint" id="guideReviewInfo" hidden></p>
+          <div class="guide-summary">
+            <h3 id="guideOverviewTitle">Document overview</h3>
+            <p id="guideOverview"></p>
+            <p class="hint" id="guideReviewInfo" hidden></p>
+          </div>
           <button id="guideRelated" hidden>Explore related ideas with Copilot</button>
           <div class="guide-controls">
             <button id="guidePrev" disabled>Previous</button>
@@ -84,8 +166,9 @@
             <p id="guideActiveExplanation"></p>
             <p class="hint" id="guideEvidenceRelation"></p>
             <p class="hint" id="guideEvidenceReview"></p>
-            <div class="guide-source"><strong>Evidence (temporary highlight)</strong><p id="guideActiveQuote"></p></div>
+            <div class="guide-source"><strong>Source passage</strong><p id="guideActiveQuote"></p></div>
           </div>
+          <button id="studyGuide" hidden>Check understanding of this passage</button>
           <h3 id="guideListTitle">Direct evidence</h3>
           <div id="guideSteps" class="guide-steps"></div>
           <section id="guideBroaderSection" hidden aria-label="Optional contextual examples">
@@ -97,9 +180,38 @@
       </section>
     </aside>
   </main>
+  <dialog id="studyDialog" aria-labelledby="studyTitle">
+    <div class="discussion-heading"><h2 id="studyTitle">Check understanding</h2><button id="studyClose">Close</button></div>
+    <p id="studyStatus" class="hint" role="status"></p>
+    <div id="studyList" hidden></div>
+    <div id="studyExercise" hidden>
+      <label for="studyPrompt">Question type</label>
+      <select id="studyPrompt"></select>
+      <label for="studyQuestion">Question</label>
+      <textarea id="studyQuestion" rows="2" maxlength="600"></textarea>
+      <label for="studyAnswer">Your answer</label>
+      <textarea id="studyAnswer" rows="4" maxlength="3000" placeholder="Try answering from memory."></textarea>
+      <p id="studyFeedback" class="hint"></p>
+      <div id="studyEvidence" class="guide-source" hidden>
+        <p id="studySavedAnswer"></p>
+        <p id="studyQuote"></p>
+        <button id="studyJump">Go to source</button>
+      </div>
+      <div class="actions">
+        <button id="studyReveal">Reveal source</button>
+        <button id="studyDraftQuestion">Draft question with Copilot</button>
+        <button id="studyAsk">Feedback with Copilot</button>
+        <button id="studySave" class="primary">Save for review</button>
+        <button id="studyAgain" hidden>Again</button>
+        <button id="studyGotIt" class="primary" hidden>Got it</button>
+      </div>
+    </div>
+  </dialog>
+  <script nonce="{{NONCE}}" src="{{STUDY_JS}}"></script>
   <script nonce="{{NONCE}}" src="{{MARKDOWN_JS}}"></script>
   <script nonce="{{NONCE}}" src="{{GUIDE_JS}}"></script>
   <script nonce="{{NONCE}}" src="{{SPEECH_JS}}"></script>
+  <script nonce="{{NONCE}}" src="{{FIND_JS}}"></script>
   <script nonce="{{NONCE}}" src="{{JS}}"></script>
 </body>
 </html>

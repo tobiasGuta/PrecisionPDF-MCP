@@ -1,143 +1,156 @@
 "use strict";
 
-const { execFile } = require("node:child_process");
 const { prepareBatches, generateGuide } = require("./guide");
-const { resolveQuery, findExactMentions } = require("./search");
+const { resolveQuery, findExactMentions, findDefinitions } = require("./search");
+const { readerProcess, fileVersion } = require("./reader_process");
 
-function readIndex(vscode, repo, picked) {
-  return new Promise((resolve, reject) => {
-    const uv = vscode.workspace.getConfiguration("precisionpdfLearning").get("uvPath") || "uv";
-    execFile(uv, ["--directory", repo, "run", "python", "-m", "precisionpdf_mcp.guided_index",
-      "--root", picked.root, "--file", picked.filename],
-    { cwd: repo, timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error) return reject(new Error((stderr || error.message).trim().slice(0, 1000)));
-      try { resolve(JSON.parse(stdout)); }
-      catch (_) { reject(new Error("Unexpected Guided Reading evidence response.")); }
-    });
-  });
-}
+function attachGuidedReading({ vscode, backend, send, load, currentPage, ocrPages, panel, tutoringBusy }) {
+  let searchCache = null;
+  const plans = new Map();
+  let active = null;
 
-function attachGuidedReading({ vscode, repo, picked, send, load, currentPage, panel, tutoringBusy }) {
-  let index = null;
-  let plan = null;
-  let working = false;
-  let cancelled = false;
-  let tokenSource = null;
-  let disposed = false;
-
-  async function askModel(model, question) {
-    if (cancelled || disposed) throw new Error("Guided analysis cancelled.");
-    const response = await model.sendRequest([vscode.LanguageModelChatMessage.User(question)], {}, tokenSource.token);
-    let body = "";
-    for await (const fragment of response.text) {
-      if (cancelled || disposed) throw new Error("Guided analysis cancelled.");
-      body += fragment;
-      if (body.length > 25000) throw new Error("Copilot exceeded the bounded guide response size.");
+  async function verifySource(step, fingerprint) {
+    if (tutoringBusy()) throw new Error("Wait for the current explanation to finish.");
+    const version = await fileVersion(backend);
+    const target = currentPage();
+    const page = target?.page === step.page && target.fileVersion === version ? target : await load(step.page);
+    if (!page || currentPage() !== page || page.page !== step.page || page.sha256 !== fingerprint) {
+      throw new Error("The PDF changed or the source is unavailable. The saved text is still available.");
     }
-    return body;
+    const quote = page.words.slice(step.start_word, step.end_word + 1).map(w => w[4]).join(" ");
+    if (quote !== step.quote) throw new Error("The original source words could not be verified on this page.");
   }
 
-  async function activateStep(number) {
-    if (!plan || working || tutoringBusy()) return;
-    if (!Number.isSafeInteger(number) || number < 0 || number >= plan.steps.length) return;
-    const step = plan.steps[number];
-    let page = currentPage();
-    if (!page || page.page !== step.page) page = await load(step.page);
-    if (!page || page.page !== step.page) throw new Error("PDF navigation could not confirm the target page.");
-    if (page.sha256 !== plan.fingerprint) {
-      plan = null;
-      throw new Error("The PDF changed after indexing; close and reopen Guided Reading before highlighting.");
-    }
-    // Verify that this exact word range is still present before highlighting.
-    const range = page.words.slice(step.start_word, step.end_word + 1);
-    if (range.length !== step.end_word - step.start_word + 1 ||
-        range.map(word => String(word[4])).join(" ") !== step.quote) {
-      throw new Error("Evidence coordinates no longer match the PDF; highlight refused.");
-    }
-    send({ type: "guide-activate", number, step });
+  async function activateStep(channel, number) {
+    const plan = plans.get(channel);
+    const step = plan?.steps[number];
+    if (!step) throw new Error("Choose another result.");
+    await verifySource(step, plan.fingerprint);
+    if (plans.get(channel) !== plan) return;
+    send({ type: channel + "-activate", number, step, fingerprint: plan.fingerprint });
   }
 
-  async function start(question, approach = "auto") {
-    if (working || tutoringBusy() || disposed) return;
-    working = true;
-    cancelled = false;
-    index = null;
-    plan = null;
-    send({ type: "guide-clear" });
-    send({ type: "guide-progress", message: "Indexing PDF text locally…" });
+  async function localIndex(signal, progress, ocr, revision) {
+    const version = await fileVersion(backend);
+    if (searchCache?.version !== version || searchCache.revision !== revision) {
+      progress("Indexing selectable text locally…");
+      const index = await readerProcess(backend, "guided_index", ["--cached-ocr", "--search"], signal, ocr);
+      if (version !== await fileVersion(backend)) throw new Error("PDF changed while indexing. Try again.");
+      searchCache = { version, revision, index };
+    }
+    return searchCache.index;
+  }
+
+  async function start(channel, message) {
+    if (active || tutoringBusy()) {
+      send({ type: channel + "-error", message: "Finish or cancel the current request first." });
+      return;
+    }
+    const operation = { abort: new AbortController(), token: new vscode.CancellationTokenSource() };
+    active = operation;
+    const { signal } = operation.abort;
+    const progress = message => send({ type: channel + "-progress", message });
+    plans.delete(channel);
     try {
-      // Classify locally. Exact quote search never invokes Copilot or asks
-      // permission to upload document text.
-      const route = resolveQuery(question, approach);
-      index = await readIndex(vscode, repo, picked);
-      if (cancelled || disposed) { send({ type: "guide-cancelled" }); return; }
+      const question = String(message.question || "").trim().slice(0, 800);
+      const route = resolveQuery(question, channel !== "guide" ? "exact" : (message.approach || "auto"));
+      const { revision, pages: ocr } = await ocrPages();
+      const flags = ["--cached-ocr"];
+      let plan;
       if (route.kind === "exact") {
-        plan = findExactMentions(index, route.phrase);
-        send({ type: "guide-plan", plan });
-        working = false;
-        if (plan.steps.length) await activateStep(0);
-        return;
+        const index = await localIndex(signal, progress, ocr, revision);
+        plan = channel === "definition" ? findDefinitions(index, route.phrase) : findExactMentions(index, route.phrase);
+      } else {
+        if (message.start !== undefined || message.end !== undefined) {
+          const first = Number(message.start);
+          const last = Number(message.end);
+          if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || first < 1 || first > last) {
+            throw new Error("Enter a valid first and last PDF page.");
+          }
+          flags.push("--start", String(first), "--end", String(last));
+        }
+        progress("Indexing selected PDF pages locally…");
+        const index = await readerProcess(backend, "guided_index", flags, signal, ocr);
+        const count = prepareBatches(index).length + 2;
+        const [first, last] = index.scope;
+        const scope = "PDF pages " + first + "–" + last;
+        const skipped = index.skipped_pages.length;
+        const coverage = skipped ? " · " + skipped + " pages without selectable text skipped" : "";
+        const agreed = await vscode.window.showWarningMessage(
+          "Send extracted text from " + scope + " to GitHub Copilot using up to " + count +
+          " requests?" + coverage, { modal: true }, "Analyze PDF"
+        );
+        signal.throwIfAborted();
+        if (agreed !== "Analyze PDF") {
+          send({ type: channel + "-cancelled" });
+          return;
+        }
+        const models = await vscode.lm.selectChatModels({ vendor: "copilot" });
+        signal.throwIfAborted();
+        const model = models[0];
+        if (!model) throw new Error("No Copilot model available. Sign in and verify model access in VS Code.");
+        plan = await generateGuide({ index: { ...index, scopeLabel: scope }, question, onProgress: progress,
+          sendModel: async prompt => {
+            signal.throwIfAborted();
+            const request = vscode.LanguageModelChatMessage.User(prompt);
+            if (await model.countTokens(request, operation.token.token) > model.maxInputTokens) {
+              throw new Error("This request exceeds the model’s context limit. Choose a smaller page range.");
+            }
+            signal.throwIfAborted();
+            const response = await model.sendRequest([request], {}, operation.token.token);
+            let body = "";
+            for await (const fragment of response.text) {
+              signal.throwIfAborted();
+              body += fragment;
+              if (body.length > 25000) throw new Error("Copilot returned an oversized guide response.");
+            }
+            return body;
+          }
+        });
+        plan.overview = scope + coverage + "\n\n" + plan.overview;
       }
-      const batches = prepareBatches(index);
-      send({ type: "guide-progress", message: "Indexed " + index.pages + " pages; " + batches.length + " analysis sections." });
-      // Candidate analysis + synthesis + skeptical evidence review.
-      const count = batches.length + 2;
-      const agreed = await vscode.window.showWarningMessage(
-        "Guided Reading will send extracted PDF text to GitHub Copilot using up to " + count +
-        " model requests (" + index.pages + " pages). This may use your plan quota. Continue?",
-        { modal: true }, "Analyze PDF"
-      );
-      if (agreed !== "Analyze PDF" || cancelled || disposed) {
-        send({ type: "guide-cancelled" });
-        return;
+      signal.throwIfAborted();
+      plans.set(channel, plan);
+      send({ type: channel + "-plan", plan });
+      if (channel !== "definition" && (plan.type === "exact" ? plan.steps.length : plan.directCount > 0)) {
+        await activateStep(channel, 0);
       }
-      const models = await vscode.lm.selectChatModels({ vendor: "copilot" });
-      if (!models.length) throw new Error("No Copilot model available. Sign in and verify model access in VS Code.");
-      tokenSource = new vscode.CancellationTokenSource();
-      plan = await generateGuide({ index, question,
-        sendModel: prompt => askModel(models[0], prompt),
-        onProgress: message => send({ type: "guide-progress", message }) });
-      if (cancelled || disposed) throw new Error("Guided analysis cancelled.");
-      send({ type: "guide-plan", plan });
-      working = false;
-      // Broader-only findings require the user's explicit opt-in before highlights.
-      if (plan.directCount > 0) await activateStep(0);
     } catch (error) {
-      plan = null;
-      if (!disposed) send({ type: "guide-error", message: error.message || String(error) });
+      send(signal.aborted ? { type: channel + "-cancelled" }
+        : { type: channel + "-error", message: error.message || String(error) });
     } finally {
-      working = false;
-      if (tokenSource) { tokenSource.dispose(); tokenSource = null; }
+      operation.token.dispose();
+      active = null;
     }
+  }
+
+  function cancel() {
+    active?.abort.abort();
+    active?.token.cancel();
   }
 
   function handle(message) {
-    if (message.type === "guideStart") {
-      void start(String(message.question || "").slice(0, 800), message.approach || "auto");
-      return true;
+    const channel = message.type.startsWith("definition") ? "definition" : message.type.startsWith("find") ? "find" : "guide";
+    switch (message.type) {
+      case "definitionStart":
+      case "findStart":
+      case "guideStart": void start(channel, message); return true;
+      case "guideRelated": void start(channel, { ...message, approach: "guided" }); return true;
+      case "definitionGoto":
+      case "findGoto":
+      case "guideGoto":
+        void activateStep(channel, message.number).catch(error => {
+          send({ type: channel + "-error", message: error.message });
+        });
+        return true;
+      case "findCancel":
+      case "guideCancel": cancel(); return true;
+      default: return false;
     }
-    if (message.type === "guideRelated") {
-      // Related/conceptual evidence is selected by Copilot, not exhaustive.
-      void start(String(message.question || "").slice(0, 800), "guided");
-      return true;
-    }
-    if (message.type === "guideGoto") {
-      void activateStep(message.number).catch(error => send({ type: "guide-error", message: error.message }));
-      return true;
-    }
-    if (message.type === "guideCancel") {
-      cancelled = true;
-      if (tokenSource) tokenSource.cancel();
-      return true;
-    }
-    return false;
   }
 
-  panel.onDidDispose(() => {
-    disposed = true; cancelled = true;
-    if (tokenSource) tokenSource.cancel();
-  });
-  return { handle, isWorking: () => working };
+  panel.onDidDispose(cancel);
+  return { handle, verifySource, isWorking: () => Boolean(active) };
 }
 
 module.exports = { attachGuidedReading };

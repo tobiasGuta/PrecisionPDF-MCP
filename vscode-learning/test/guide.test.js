@@ -181,20 +181,20 @@ test("the reviewer sees exact quotes and is explicitly told to reject topic drif
   assert.match(synthesisPrompt("test",[],3),/fewer is better/);
 });
 
-test("focused query excludes off-topic environmental passages before synthesis", async () => {
-  const idx=fakeIndex();
-  idx.excerpts[1].text="Data centers consume massive water resources.";
-  const model=modelSequence(
-    {findings:[finding("p1-w0","direct","opacity"),finding("p2-w0","broader","water consumption")]},
-    {overview:"Two themes",steps:[step("p1-w0","direct","Opacity can make systems difficult to explain.")]},
-    {reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"The quote states the networks are opaque."}]}
+test("domain-specific evidence can answer an ambiguous question without repeating its terms", async () => {
+  const index = fakeIndex();
+  index.excerpts[0].text = "The flight data recorder preserves instrument readings for investigators.";
+  const model = modelSequence(
+    { findings: [finding("p1-w0", "direct")] },
+    { steps: [step("p1-w0", "direct")] },
+    { reviews: [{ evidenceId: "p1-w0", decision: "direct", reason: "Identifies the evidence preserved for investigators." }] }
   );
-  const guide=await generateGuide({index:idx,question:"What is the black box problem?",sendModel:model.sendModel});
-  assert.equal(guide.directCount,1);
-  assert.equal(guide.broaderCount,0);
-  assert.equal(guide.rejectedCount,1);
-  assert.doesNotMatch(JSON.stringify(guide),/water consumption|Data centers/);
-  assert.doesNotMatch(model.prompts[1],/Data centers/);
+  const result = await generateGuide({ index,
+    question: "How does an aircraft black box help an accident investigation?",
+    sendModel: model.sendModel });
+  assert.equal(result.directCount, 1);
+  assert.match(result.steps[0].quote, /flight data recorder/);
+  assert.doesNotMatch(model.prompts[2], /interpretability|data-center/i);
 });
 
 test("zero broader connections is a valid result", async () => {
@@ -278,14 +278,14 @@ test("overview citing rejected or contextual passage falls back to direct source
   assert.doesNotMatch(guide.overview,/Water consumption|accountability/);
 });
 
-test("unpredictability alone is not direct evidence of interpretability", async () => {
+test("a reviewer rejection removes evidence and invalidates an overview that references it", async () => {
   const index=fakeIndex();
   index.excerpts[1].text="Neural networks can be unreliable and unpredictable.";
   const model=modelSequence(
     {findings:[finding("p1-w0","direct"),finding("p2-w0","direct")]},
     {overview:"",steps:[step("p1-w0","direct"),step("p2-w0","direct")]},
     {reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"Opaque networks are hard to explain."},
-      {evidenceId:"p2-w0",decision:"direct",reason:"Unpredictability has indirect relevance."}],
+      {evidenceId:"p2-w0",decision:"reject",reason:"Unpredictability has indirect relevance."}],
       directOverview:"The model is opaque and unpredictable.", overviewEvidenceIds:["p1-w0","p2-w0"]}
   );
   const guide=await generateGuide({index,question:"Why are neural nets black boxes?",sendModel:model.sendModel});
@@ -296,14 +296,14 @@ test("unpredictability alone is not direct evidence of interpretability", async 
   assert.doesNotMatch(guide.overview,/unpredictable/);
 });
 
-test("unpredictability can appear only as qualified contextual example with verified bridge", async () => {
+test("reviewer can downgrade a direct claim to qualified context", async () => {
   const index=fakeIndex();
   index.excerpts[1].text="Neural networks can be unreliable and unpredictable.";
   const model=modelSequence(
     {findings:[finding("p1-w0","direct"),finding("p2-w0","direct")]},
     {overview:"",steps:[step("p1-w0","direct"),step("p2-w0","direct")]},
     {reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"Opaque networks are hard to explain."},
-      {evidenceId:"p2-w0",decision:"direct",reason:"A possible contextual illustration.",
+      {evidenceId:"p2-w0",decision:"broader",reason:"A possible contextual illustration.",
         bridgeQuote:"unreliable and unpredictable.",
         link:"Unpredictability may motivate questions about the interpretability of model behavior."}]}
   );

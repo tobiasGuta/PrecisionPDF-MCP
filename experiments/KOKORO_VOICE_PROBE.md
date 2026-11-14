@@ -1,15 +1,12 @@
 # PrecisionPDF — offline Kokoro voice experiment
 
-This branch adds a **standalone CPU-only voice-quality/latency probe**, before adding any audio controls to the VS Code extension. The current PDF reader, MCP annotation tools, Copilot usage, and VSIX packaging are unchanged. No model is downloaded or audio is generated automatically.
+The CPU-only Kokoro setup powers the extension’s **Read selection** and **Read aloud** controls. The standalone probe can also compare voice quality and latency. Download the voice assets during setup, then use the controls to generate speech on demand.
 
 ## Fedora setup (isolated; does not change the existing PrecisionPDF Python environment)
 
 From the PrecisionPDF-MCP repository root:
 
 ```bash
-git fetch origin
-git switch feat/kokoro-local-voice-probe
-
 CACHE="$HOME/.cache/precisionpdf-kokoro"
 mkdir -p "$CACHE"
 uv venv --python 3.12 "$CACHE/.venv"
@@ -65,7 +62,7 @@ References: [kokoro-onnx upstream](https://github.com/thewh1teagle/kokoro-onnx),
 
 ## First experimental Read Aloud implementation (af_heart)
 
-On this same branch, completed **Manual tutoring** Copilot answers now offer
+Completed **Manual tutoring** Copilot answers offer
 **Read aloud / Pause / Resume / Stop** under the visible written answer.
 Voice: the chosen offline Kokoro voice **af_heart**, CPU-only, with no additional
 Copilot request. Speech is opt-in and runs in a cancellable, separate Python
@@ -82,11 +79,10 @@ Kokoro model and voice pack from the setup section above must be present.
 
 After updating the branch, rebuild/install the experimental VSIX locally:
 
-    cd /mnt/Development/Tools/PrecisionPDF-MCP
     npm --prefix vscode-learning test
     cd vscode-learning
     npm run package:vsix
-    code --install-extension ./precisionpdf-learning-0.6.2.vsix --force
+    code --install-extension ./precisionpdf-learning-0.8.0.vsix --force
 
 Reload VS Code, reopen PrecisionPDF Learning Mode, ask Copilot a question,
 then click **Read aloud** after the answer finishes. Confirm that the answer

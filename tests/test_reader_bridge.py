@@ -45,11 +45,14 @@ def test_page_bounds_and_workspace_confinement(document, tmp_path):
         read_learning_page(str(tmp_path), "escape.pdf", 1)
 
 
-def test_rotated_pages_are_rejected(tmp_path):
+def test_rotated_pages_have_rotated_word_boxes(tmp_path):
     file = tmp_path / "rotated.pdf"
     with pymupdf.open() as doc:
         page = doc.new_page()
+        page.insert_text((50, 100), "Rotated text")
         page.set_rotation(90)
         doc.save(file)
-    with pytest.raises(AnnotationError, match="Rotated"):
-        read_learning_page(str(tmp_path), file.name, 1)
+    result = read_learning_page(str(tmp_path), file.name, 1)
+    assert result["width"] > result["height"]
+    assert result["words"][0][4] == "Rotated"
+    assert result["words"][0][1] == 50

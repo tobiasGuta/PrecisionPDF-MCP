@@ -1,4 +1,4 @@
-# PrecisionPDF Learning Mode (experimental)
+# PrecisionPDF Learning Mode
 
 An **optional read-only VS Code extension** for reading course PDFs and asking
 questions about selected passages. It uses the existing PrecisionPDF Python
@@ -17,7 +17,7 @@ Learning Mode can run in your regular VS Code window without the Extension Devel
    npm install
    npm test
    npm run package:vsix
-   code --install-extension precisionpdf-learning-0.6.2.vsix
+   code --install-extension precisionpdf-learning-0.8.0.vsix
    ```
 
    Alternatively, download the VSIX from the **Learning Mode VSIX** GitHub Actions workflow artifact for the matching commit and install that file using `code --install-extension /path/to/file.vsix` or **Extensions → Install from VSIX...**.
@@ -27,31 +27,33 @@ Learning Mode can run in your regular VS Code window without the Extension Devel
 
 For updates, rebuild and reinstall the new VSIX. A VSIX is **not** a Marketplace publication. Manual Tutoring and Guided Reading still use GitHub Copilot's VS Code Language Model API and require available Copilot model access; local PDF search does not.
 
+## Reading a PDF
+
+- Open a PDF from VS Code Explorer with **Open PDF in PrecisionPDF Learning Mode**, or use the Command Palette to browse the workspace. Reopening a PDF restores its page, scroll position, and zoom when the saved document fingerprint still matches.
+- Use the page number field, authored PDF outline, or Left and Right arrows. Toggle **Study panel** to give the PDF the full width. **Back** returns to the position before a source jump. **Fit width** and the zoom selector adjust the reader independently of the tutor.
+- Use **Find** or **Ctrl+F** inside the reader to search locally and jump to matches. Results show which pages had selectable text and how many were skipped. The count includes all matches within the supported search size. The first 150 hits are available for navigation.
+- Select text to **Copy quote** with its PDF page, **Pin passage** for a cross-page comparison, or **Read selection** with the optional local Kokoro setup. Pins last for the reader session. Read Aloud also works on completed tutor responses and supports up to 3,500 characters.
+- **OCR this page** appears when a page has no selectable words. Install Tesseract language data first, such as `tesseract-langpack-eng` on Fedora. Set `TESSDATA_PREFIX` to the directory containing the `.traineddata` files if they are not detected. The reader reuses OCR results for selection, Find and Guided Reading during the session. Review OCR quotations against the page.
+- In **Manual tutoring**, choose **Selected passage only** to send the question and selected text with its document and page labels. The full-context option also sends bounded page text, pins, and recent discussion. **Copy prompt** places source context on the clipboard for use in another chat client.
+- In **Guided Reading**, choose the whole PDF, the current authored outline section, or a page range. The limit is 60 pages per guided run, with additional evidence and request limits. The confirmation reports the selected pages and maximum Copilot requests. Guide judgments use the question and source evidence across subjects.
+
+## Practice while reading
+
+- **Check understanding** opens a short-answer exercise for the selected text or current page. You can also start one from a highlighted Guided Reading step. Try your answer, then **Reveal source** to check it or **Go to source** to inspect the original PDF. **Resume check** returns to the exercise after a jump.
+- **Save for review** keeps your question, answer, and source in local VS Code workspace state. **Review questions** lists the current PDF’s saved questions. **Again** schedules another attempt in ten minutes, and **Got it** increases the interval across successful reviews.
+- Local prompts work offline. You can also ask Copilot to draft a question or give feedback on your answer. Each of those actions confirms which text will be sent before making a model request.
+- Select a term or acronym and choose **Find definition** to search the PDF for likely definitions and expansions. Click a result to jump to its source.
+- Choose **Listen** to hear the current page or selection with the optional English Kokoro voice. **Follow audio** highlights each passage as it plays. Choose 0.8×, 1×, or 1.2× before starting playback. [Kokoro setup](../experiments/KOKORO_VOICE_PROBE.md)
+
+The reader uses the configured Python environment in offline, no-sync mode. Run `uv sync` in the matching backend clone during installation or update. Set the backend and uv paths in VS Code User settings.
+
 ## Fedora development setup
 
-1. From the PrecisionPDF-MCP repository checkout, run
-   `uv sync --extra dev` and `uv run pytest -q`.
-2. In VS Code, open the **vscode-learning** subdirectory as a folder.
-3. Press **F5** to launch an Extension Development Host.
-4. In the new VS Code window, use **File → Open Folder** to open your PDF
-   workspace (the directory containing the PDFs).
-5. Open the Command Palette and run **PrecisionPDF: Open Learning Mode**.
-6. Pick a PDF, select text by dragging across the rendered page, and click
-   **Ask with Copilot** to request an explanation. You may be asked to grant
-   language-model access to this extension.
+1. Run `uv sync --extra dev` from the repository root.
+2. Open the **vscode-learning** folder in VS Code and press **F5**.
+3. In the Extension Development Host, open the folder containing your PDFs and run **PrecisionPDF: Open Learning Mode**.
 
-The extension requests a model via the official VS Code Language Model API
-(`vendor: "copilot"`). A GitHub Copilot account with available model access is
-required for in-panel explanations. Requests count against existing plan
-quotas; the extension does **not** require or collect an API key. If no Copilot
-model is available, click **Copy prompt** and paste into your existing VS Code
-chat, Codex, or Antigravity session instead. Those products' subscriptions
-are not automatically interchangeable with the Copilot extension API.
-
-If your repository lives somewhere else after packaging/installing the
-extension, set `precisionpdfLearning.repositoryPath` to its absolute path.
-If VS Code cannot locate uv, set `precisionpdfLearning.uvPath` to the full
-executable path returned by `command -v uv`.
+The extension uses the VS Code Language Model API with the Copilot vendor. In-panel explanations require available Copilot model access and use that account's quota.
 
 ## Tests
 
@@ -60,19 +62,15 @@ Run `uv run pytest -q` from the repository root and
 A manual VS Code Extension Development Host test is still required for the
 webview, word selection, and actual Copilot access.
 
-## Scope and safety
+## Scope and privacy
 
-- The viewer is a **prototype** for ordinary horizontal, selectable PDF text.
-  Scanned, encrypted, rotated, or unusually laid out pages may not work.
-- Selection is word-level. Rendering is local using PyMuPDF; PDFs remain
-  inside the configured workspace using the existing path checks.
-- The bridge never writes files or annotations. Use the regular PrecisionPDF
-  MCP tools when you want to highlight or edit annotations.
-- The page's extracted text (up to 12,000 characters) and selected quote
-  (up to 2,500 characters) are sent to Copilot **only when you click Ask**.
-  Review document privacy requirements before using cloud models.
-- No outbound network calls are made by PrecisionPDF's Python bridge itself.
-- No model requests happen automatically while navigating the PDF.
+- Learning Mode reads PDFs within the workspace and shows temporary highlights. Use the MCP tools for persistent annotations.
+- Find, rendering, OCR, and Kokoro run locally. Copilot receives extracted text upon an explicit tutor request or guided analysis confirmation.
+- Password-protected PDFs are unsupported. Complex layouts can still affect recognized reading order.
+
+## Release history
+
+The notes below describe the behavior of the indicated earlier versions.
 
 ## Tutor discussions and formatted explanations (v0.2 experiment)
 

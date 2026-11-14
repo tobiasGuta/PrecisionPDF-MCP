@@ -2,7 +2,7 @@
   "name": "precisionpdf-learning",
   "displayName": "PrecisionPDF Learning Mode",
   "description": "Local PDF reading and optional Copilot-powered explanations for PrecisionPDF-MCP",
-  "version": "0.6.2",
+  "version": "0.8.0",
   "private": true,
   "license": "MIT",
   "engines": {
@@ -21,18 +21,29 @@
       {
         "command": "precisionpdfLearning.open",
         "title": "PrecisionPDF: Open Learning Mode"
+      },
+      {
+        "command": "precisionpdfLearning.openFile",
+        "title": "Open PDF in PrecisionPDF Learning Mode"
       }
     ],
+    "menus": {
+      "explorer/context": [
+        { "command": "precisionpdfLearning.openFile", "when": "resourceExtname =~ /^\\.pdf$/i" }
+      ]
+    },
     "configuration": {
       "title": "PrecisionPDF Learning Mode",
       "properties": {
         "precisionpdfLearning.repositoryPath": {
           "type": "string",
+          "scope": "machine",
           "default": "",
           "description": "Absolute path to the local PrecisionPDF-MCP Python repository. When missing, the extension prompts you to select it once."
         },
         "precisionpdfLearning.uvPath": {
           "type": "string",
+          "scope": "machine",
           "default": "uv",
           "description": "Path to the uv executable on Fedora or another system."
         }

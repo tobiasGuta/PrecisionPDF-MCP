@@ -16,7 +16,7 @@ function fixture(t) {
   fs.mkdirSync(path.join(repo, "src", "precisionpdf_mcp"), { recursive: true });
   fs.mkdirSync(packageDir, { recursive: true });
   fs.mkdirSync(devDir, { recursive: true });
-  for (const file of ["pyproject.toml", "src/precisionpdf_mcp/reader_bridge.py", "src/precisionpdf_mcp/guided_index.py"]) {
+  for (const file of ["pyproject.toml", "src/precisionpdf_mcp/reader_bridge.py", "src/precisionpdf_mcp/guided_index.py", "src/precisionpdf_mcp/reader_text.py"]) {
     fs.writeFileSync(path.join(repo, file), "");
   }
   return { repo, packageDir, devDir };

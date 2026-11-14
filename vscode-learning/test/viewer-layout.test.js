@@ -14,16 +14,16 @@ test("question composer lives outside the independently scrolling discussion", (
   const question = html.indexOf('id="question"');
   assert.ok(scroller > 0 && thread > scroller);
   assert.ok(composer > scrollerEnd && question > composer);
-  assert.match(css, /\.tutor\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+auto/s);
-  assert.match(css, /\.tutor-scroll\s*\{[^}]*overflow-y:\s*auto/s);
+  assert.match(css, /\.tutor\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/s);
+  assert.match(css, /\.tutor-scroll, \.guide-panel\s*\{[^}]*overflow:\s*auto/s);
 });
 
-test("new discussion and selection-change event hooks remain wired", () => {
+test("new discussion and page-bound selections remain wired", () => {
   const viewer = readFileSync(join(__dirname, "../media/viewer.js"), "utf8");
   const extension = readFileSync(join(__dirname, "../extension.js"), "utf8");
   assert.match(viewer, /id|newThread/);
-  assert.match(viewer, /selectionChanged/);
+  assert.match(viewer, /fingerprint: page\?\.sha256/);
   assert.match(viewer, /preserveSelection/);
-  assert.match(extension, /selectionChanged/);
+  assert.match(extension, /function selectedQuote/);
   assert.match(extension, /session\.reset\(\)/);
 });

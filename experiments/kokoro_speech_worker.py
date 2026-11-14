@@ -21,7 +21,7 @@ def segments(text, limit=230):
             part, length = [], 0
         part.append(word)
         length += len(word) + (1 if length else 0)
-        if length > 90 and re.search(r"[.!?;:]$", word):
+        if length > 30 and re.search(r"[.!?;:]$", word):
             out.append(" ".join(part))
             part, length = [], 0
     if part:
@@ -37,8 +37,13 @@ def main():
     try:
         request = json.loads(sys.stdin.readline())
         text = request.get("text")
-        if not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT:
-            raise ValueError("Narration must be 1 to 3,500 characters")
+        follow = request.get("follow") is True
+        limit = 24_000 if follow else MAX_TEXT
+        speed = request.get("speed", 1.0)
+        if speed not in (0.8, 1.0, 1.2):
+            raise ValueError("Unsupported narration speed")
+        if not isinstance(text, str) or not text.strip() or len(text) > limit:
+            raise ValueError("Narration exceeds the text limit")
         cache = Path.home() / ".cache" / "precisionpdf-kokoro"
         model, voices = cache / "kokoro-v1.0.onnx", cache / "voices-v1.0.bin"
         if not model.is_file() or not voices.is_file():
@@ -55,14 +60,18 @@ def main():
         kokoro = Kokoro.from_session(session, str(voices))
         if "af_heart" not in kokoro.get_voices():
             raise ValueError("Voice af_heart is not installed")
-        for sentence in segments(text):
+        offset = 0
+        for sentence in segments(text, limit=160 if follow else 230):
             samples, rate = kokoro.create(sentence, voice="af_heart",
-                                          speed=1.0, lang="en-us")
+                                          speed=speed, lang="en-us")
             if len(samples) == 0:
                 raise RuntimeError("Kokoro returned no audio")
             wave = io.BytesIO()
             sf.write(wave, samples, rate, format="WAV", subtype="PCM_16")
-            emit({"type": "audio", "data": base64.b64encode(wave.getvalue()).decode("ascii")})
+            count = len(sentence.split())
+            emit({"type": "audio", "data": base64.b64encode(wave.getvalue()).decode("ascii"),
+                  "start": offset, "end": offset + count - 1})
+            offset += count
         emit({"type": "done"})
         return 0
     except Exception as exc:

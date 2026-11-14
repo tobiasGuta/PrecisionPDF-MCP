@@ -43,13 +43,14 @@ class SpeechService {
     this.stop();
   }
 
-  speak(turnId, markdown) {
+  speak(turnId, markdown, { verbatim = false, source, speed = 1 } = {}) {
     if (this.closed) return;
     this.stop();
-    const text = plainSpeech(markdown);
-    if (!Number.isSafeInteger(turnId) || turnId < 1 || !text || text.length > MAX_TEXT) {
+    const text = verbatim ? markdown.trim() : plainSpeech(markdown);
+    if (!Number.isSafeInteger(turnId) || turnId < 0 || !text || text.length > (source ? 24000 : MAX_TEXT)) {
       this.send({ type: "speech-error", turnId,
-        message: "Narration currently supports explanations up to 3,500 characters." });
+        message: source ? "This page is too long to narrate at once. Select a passage." :
+          "Narration currently supports text up to 3,500 characters." });
       return;
     }
     const python = path.join(this.home, ".cache", "precisionpdf-kokoro", ".venv", "bin", "python");
@@ -72,7 +73,11 @@ class SpeechService {
       this.send({ type: "speech-error", turnId, message: String(error).slice(0, 500) });
     };
 
-    this.timer = setTimeout(() => fail("Voice generation timed out."), MAX_TIME_MS);
+    const refreshTimer = () => {
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => fail("Voice generation timed out."), MAX_TIME_MS);
+    };
+    refreshTimer();
     proc.stdout.setEncoding("utf8");
     proc.stdout.on("data", (data) => {
       if (this.active !== current) return;
@@ -87,7 +92,14 @@ class SpeechService {
         catch (_) { return fail("Invalid voice worker response."); }
         if (event.type === "audio" && typeof event.data === "string" &&
             event.data.length < MAX_LINE && /^[A-Za-z0-9+/]+={0,2}$/.test(event.data)) {
-          this.send({ type: "speech-audio", turnId, data: event.data });
+          refreshTimer();
+          let span;
+          if (source && Number.isInteger(event.start) && Number.isInteger(event.end) &&
+              event.start >= 0 && event.end >= event.start && source.start_word + event.end <= source.end_word) {
+            const { page, fingerprint, start_word } = source;
+            span = { page, fingerprint, start: start_word + event.start, end: start_word + event.end };
+          }
+          this.send({ type: "speech-audio", turnId, data: event.data, ...(span ? { span } : {}) });
         } else if (event.type === "done") {
           current.receivedDone = true;
           this.send({ type: "speech-done", turnId });
@@ -101,7 +113,7 @@ class SpeechService {
     });
     proc.stderr.on("data", () => {}); // avoid leaking runtime diagnostic details to the webview
     proc.on("error", (error) => fail("Unable to start Kokoro: " + error.message));
-    proc.on("exit", (code) => {
+    proc.on("close", (code) => {
       if (this.active !== current) return;
       if (!current.receivedDone) fail("Kokoro exited before audio was ready (code " + code + ").");
       else {
@@ -111,7 +123,7 @@ class SpeechService {
       }
     });
     proc.stdin.on("error", (error) => fail("Voice worker input failed: " + error.message));
-    proc.stdin.end(JSON.stringify({ text }) + "\n");
+    proc.stdin.end(JSON.stringify(source ? { text, follow: true, speed: [0.8, 1, 1.2].includes(speed) ? speed : 1 } : { text }) + "\n");
   }
 }
 

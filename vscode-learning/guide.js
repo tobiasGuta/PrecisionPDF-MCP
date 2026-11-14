@@ -5,7 +5,7 @@
 const MAX_BATCH_CHARS = 14500;
 const MAX_BATCHES = 30;
 const MAX_STEPS = 7;
-const { sourceAddressesTopic, directlyExplainsTopic, groundedBridge } = require("./relevance");
+const { groundedBridge } = require("./relevance");
 const { composeReviewedOverview } = require("./guide_overview");
 
 function prepareBatches(index) {
@@ -63,9 +63,7 @@ function candidatePrompt(question, batch, count, total) {
     "Choose zero to three strong findings. Do not fill a quota.",
     "Direct means this excerpt addresses the question itself, not merely the same general field.",
     "Broader must have a CLEAR, SPECIFIC link to the named question, demonstrated by the source words.",
-    "Sharing a subject area (AI, big tech, societal impacts, environment, etc.) is not a link.",
-    "For a question about neural-network black boxes, unrelated data-center energy, water use,",
-    "and general corporate accountability are OFF TOPIC unless the quote explicitly explains opacity.",
+
     "Broader is optional: zero broader findings is a valid and preferred result.",
     "Never call indirect, contextual or speculative evidence a direct answer.",
     "If a passage is weakly connected or off-topic, omit it entirely.",
@@ -77,9 +75,9 @@ function candidatePrompt(question, batch, count, total) {
   ].join("\n");
 }
 
-function synthesisPrompt(question, candidates, pages) {
+function synthesisPrompt(question, candidates, pages, scopeLabel) {
   return [
-    "Compose a carefully sourced guided reading of a " + pages + "-page PDF.",
+    "Compose a carefully sourced guided reading using " + (scopeLabel || ("a " + pages + "-page PDF")) + ".",
     "Question: " + JSON.stringify(String(question).slice(0, 800)),
     "Select UP TO seven relevant, distinct excerpts from these candidates; fewer is better.",
     'Return JSON ONLY: {"overview":"...","steps":[{"evidenceId":"...","explanation":"...","relevance":"direct|broader","why":"..."}]}',
@@ -109,15 +107,14 @@ function reviewPrompt(question, steps) {
     "User question: " + JSON.stringify(String(question).slice(0, 800)),
     "Evaluate every suggested step using ONLY its exact quoted evidence.",
     'Return JSON ONLY: {"reviews":[{"evidenceId":"...","decision":"direct|broader|reject","reason":"...","bridgeQuote":"verbatim source fragment","link":"specific relationship to question"}],"directOverview":"...","overviewEvidenceIds":["p1-w0"]}',
-    "Direct: the quote specifically explains the concept asked about, not merely a related outcome.",
-    "Unpredictability or unreliability alone does not establish that a neural network is hard to interpret.",
-    "For black-box questions, classify a statement ONLY about unpredictability as broader context",
-    "if it has a clear quoted bridge to interpretability; otherwise reject it.",
+    "Direct: the quoted words must support the specific answer and the proposed explanation.",
+    "Interpret ambiguous terminology in the field indicated by the question and source.",
+    "Accept supported paraphrases. Shared vocabulary or related consequences alone are insufficient.",
+
     "Broader: a SPECIFIC source-grounded conceptual link to the asked concept, not just shared domain.",
     "For broader, include bridgeQuote copied exactly from the source, and link saying HOW",
     "that fragment bears on the user's concept. The bridge must actually appear in the source.",
-    "Environmental water consumption, corporate politics, and general AI ethics do not explain",
-    "the neural-network black-box concept unless the source also discusses model opacity.",
+
     "Zero broader passages is acceptable. When doubtful, REJECT.",
     "Broader link text must never say it directly answers, demonstrates, or proves the question.",
     "Reject: topical drift, unsupported inference, a misleading explanation or no clear relevance.",
@@ -147,7 +144,6 @@ async function generateGuide({ index, question, sendModel, onProgress }) {
   const batches = prepareBatches(index);
   const evidenceById = new Map(index.excerpts.map(e => [e.id, e]));
   const candidates = new Map();
-  let screenedOut = 0;
   const query = String(question || "What is the main idea of this PDF?").trim().slice(0, 800);
   if (!query) throw new Error("Enter a document-wide question.");
   for (let i = 0; i < batches.length; i++) {
@@ -161,9 +157,6 @@ async function generateGuide({ index, question, sendModel, onProgress }) {
       const why = boundedString(item.why, 500);
       const relevance = declaredRelevance(item.relevance);
       if (evidence && idea && why && relevance && !candidates.has(evidence.id)) {
-        // Conservative content gate, independent of the model's assertions.
-        // It can decline semantic paraphrases; users can still inspect the PDF.
-        if (!sourceAddressesTopic(query, evidence.text)) { screenedOut++; continue; }
         candidates.set(evidence.id, { evidenceId: evidence.id, page: evidence.page,
           section: evidence.section || "", boundary: evidence.boundary || "passage",
           relevance, why, idea, excerpt: evidence.text });
@@ -172,7 +165,7 @@ async function generateGuide({ index, question, sendModel, onProgress }) {
   }
   if (!candidates.size) throw new Error("No sufficiently relevant source references were returned.");
   onProgress?.("Drafting source-linked explanations…");
-  const final = readModelJson(await sendModel(synthesisPrompt(query, [...candidates.values()], index.pages)));
+  const final = readModelJson(await sendModel(synthesisPrompt(query, [...candidates.values()], index.pages, index.scopeLabel)));
   if (!Array.isArray(final.steps)) throw new Error("Copilot returned an invalid guided explanation.");
   const used = new Set();
   const proposed = [];
@@ -217,13 +210,8 @@ async function generateGuide({ index, question, sendModel, onProgress }) {
   for (const step of proposed) {
     const verdict = decisions.get(step.evidenceId);
     if (!verdict || verdict.decision === "reject") { rejected++; continue; }
-    let relevance = step.relevance === "broader" || verdict.decision === "broader" ? "broader" : "direct";
-    if (relevance === "direct" && !directlyExplainsTopic(query, step.quote)) {
-      // Reliability problems may motivate interpretability research, but a
-      // bare claim of unpredictability does not itself explain opacity.
-      relevance = "broader";
-    }
-    if (relevance === "broader" && !groundedBridge(query, step.quote, verdict)) {
+    const relevance = step.relevance === "broader" || verdict.decision === "broader" ? "broader" : "direct";
+    if (relevance === "broader" && !groundedBridge(step.quote, verdict)) {
       rejected++;
       continue;
     }
@@ -238,13 +226,13 @@ async function generateGuide({ index, question, sendModel, onProgress }) {
   if (!direct.length && !broader.length) {
     throw new Error("Relevance review rejected all passages; no trustworthy guided tour was produced.");
   }
-  const overview = composeReviewedOverview(reviewed, direct, query);
+  const overview = composeReviewedOverview(reviewed, direct);
   return {
     type: "guided",
     overview: overview.text,
     overviewSource: overview.source,
     steps: [...direct, ...broader], directCount: direct.length, broaderCount: broader.length,
-    rejectedCount: rejected + screenedOut, fingerprint: index.sha256, pages: index.pages,
+    rejectedCount: rejected, fingerprint: index.sha256, pages: index.pages,
     analyzedBatches: batches.length
   };
 }

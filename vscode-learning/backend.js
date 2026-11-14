@@ -7,6 +7,7 @@ const REQUIRED_BACKEND_FILES = [
   "pyproject.toml",
   "src/precisionpdf_mcp/reader_bridge.py",
   "src/precisionpdf_mcp/guided_index.py",
+  "src/precisionpdf_mcp/reader_text.py",
 ];
 
 function isBackendRepo(directory) {

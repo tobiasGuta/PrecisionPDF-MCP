@@ -7,11 +7,15 @@ const MAX_QUERY_WORDS = 12;
 
 function normalizeWord(value) {
   return String(value).normalize("NFKC").toLocaleLowerCase("en-US")
-    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+    .replace(/^[“”"‘’([{]+|[“”"‘’")\]},.!?;:]+$/gu, "");
 }
 
 function extractPhrase(question, mode = "auto") {
   const q = String(question || "").trim().slice(0, 800);
+  if (mode === "exact") {
+    const literal = q.replace(/^(?:"([^"]+)"|“([^”]+)”|'([^']+)')$/, (_, a, b, c) => a || b || c);
+    return literal.length <= 120 && literal.split(/\s+/).length <= MAX_QUERY_WORDS ? literal : "";
+  }
   const quoted = q.match(/["“]([^"”]+)["”]|'([^']+)'/);
   let phrase = quoted ? (quoted[1] || quoted[2]) : "";
   if (!phrase) {
@@ -25,7 +29,6 @@ function extractPhrase(question, mode = "auto") {
       if (hit) { phrase = hit[1]; break; }
     }
   }
-  if (mode === "exact" && !phrase) phrase = q;
   phrase = phrase.replace(/[?.!,\s]+$/g, "").replace(/^[\s"'“”‘’]+|[\s"'“”‘’]+$/g, "").trim();
   // Avoid treating generic concepts like "discuss safety" as exact-word requests.
   if (phrase && /\b(?:discuss(?:es|ed|ing)?|explain(?:s|ed)?|related\s+to)\b/i.test(phrase)) return "";
@@ -40,7 +43,7 @@ function resolveQuery(question, approach = "auto") {
   if (approach === "guided") return { kind: "guided", phrase: "" };
   const phrase = extractPhrase(text, approach);
   if (approach === "exact") {
-    if (!phrase) throw new Error("Use a short exact phrase (up to 12 words), such as black box.");
+    if (!phrase) throw new Error("Use an exact phrase of up to 12 words and 120 characters.");
     return { kind: "exact", phrase };
   }
   const hasLocationIntent = /\b(?:where|which\s+pages?|what\s+pages?|find|locate|mentions?|occurrences?|instances?|appears?|search)\b/i.test(text);
@@ -62,7 +65,57 @@ function resolveQuery(question, approach = "auto") {
     : { kind: "guided", phrase: "" };
 }
 
+function findText(index, phrase, limit = MAX_VISIBLE_MATCHES) {
+  const needle = String(phrase).trim().split(/\s+/).map(normalizeWord);
+  if (needle.some(word => !word)) throw new Error("Enter a valid phrase.");
+  const steps = [];
+  let totalMatches = 0;
+  let pageCount = 0;
+  index.word_pages.forEach((rows, pageIndex) => {
+    const page = pageIndex + 1;
+    const words = rows.map(row => row[0]);
+    const section = index.sections.findLast(item => item.page <= page)?.title || "";
+    const folded = words.map(normalizeWord);
+    const joined = new Map();
+    for (let i = 0; i + 1 < words.length; i++) {
+      if (/\p{L}[-\u00ad]$/u.test(words[i]) && rows[i][1] === rows[i + 1][1] &&
+          rows[i][2] !== rows[i + 1][2] && /^\p{L}/u.test(words[i + 1])) {
+        joined.set(i, [normalizeWord(words[i].slice(0, -1) + words[i + 1]),
+          normalizeWord(words[i].replace(/\u00ad$/, "") + words[i + 1])]);
+      }
+    }
+    let pageHasMatch = false;
+    for (let start = 0; start < words.length; start++) {
+      let end = start;
+      let matched = 0;
+      for (const word of needle) {
+        if (folded[end] === word) end++;
+        else if (joined.get(end)?.includes(word)) end += 2;
+        else break;
+        matched++;
+      }
+      if (matched !== needle.length) continue;
+      end--;
+      if (!pageHasMatch) { pageHasMatch = true; pageCount++; }
+      totalMatches++;
+      if (steps.length >= limit) continue;
+      steps.push({
+        evidenceId: "exact-p" + page + "-w" + start, page,
+        start_word: start, end_word: end, quote: words.slice(start, end + 1).join(" "),
+        context: words.slice(Math.max(0, start - 8), end + 10).join(" "),
+        section
+      });
+    }
+  });
+  const skipped = index.skipped_pages.length;
+  const coverage = "Searched " + (index.pages - skipped) + " of " + index.pages +
+    " pages" + (skipped ? " · " + skipped + " without selectable text skipped" : "");
+  return { type: "exact", fingerprint: index.sha256, steps, pageCount, totalMatches,
+    shownMatches: steps.length, overview: coverage + "." };
+}
+
 function findExactMentions(index, phrase, limit = MAX_VISIBLE_MATCHES) {
+  if (index?.complete && Array.isArray(index.word_pages)) return findText(index, phrase, limit);
   if (!index || index.complete !== true || !/^[0-9a-f]{64}$/.test(index.sha256 || "") ||
       !Number.isSafeInteger(index.pages) || index.pages < 1 ||
       !Array.isArray(index.page_word_counts) || index.page_word_counts.length !== index.pages ||
@@ -139,4 +192,36 @@ function findExactMentions(index, phrase, limit = MAX_VISIBLE_MATCHES) {
   };
 }
 
-module.exports = { normalizeWord, extractPhrase, resolveQuery, findExactMentions, MAX_VISIBLE_MATCHES };
+function findDefinitions(index, phrase) {
+  const term = phrase.trim();
+  const needle = term.split(/\s+/).map(normalizeWord);
+  const steps = [];
+  const marker = /^(?:means|refers to|is defined as|denotes|stands for|is a[n]?)$/i;
+  const acronym = /^[A-Z][A-Z0-9]{1,9}$/.test(term);
+  for (const [p, rows] of index.word_pages.entries()) {
+    const tokens = rows.map(row => row[0]);
+    const folded = tokens.map(normalizeWord);
+    for (let i = 0; i <= tokens.length - needle.length; i++) {
+      if (!needle.every((word, j) => folded[i + j] === word && rows[i + j][1] === rows[i][1])) continue;
+      const after = i + needle.length;
+      const following = [];
+      if (!/[.!?]["'”’)]*$/.test(tokens[after - 1])) {
+        for (let j = after; j < after + 3 && rows[j]?.[1] === rows[i][1]; j++) following.push(folded[j]);
+      }
+      const hasMarker = [1, 2, 3].some(n => marker.test(following.slice(0, n).join(" ")));
+      const expansion = acronym && i >= term.length && tokens[i] === "(" + term + ")" &&
+        rows[i - term.length][1] === rows[i][1] &&
+        tokens.slice(i - term.length, i).map(word => word[0]?.toUpperCase()).join("") === term;
+      if (!hasMarker && !expansion) continue;
+      const start = expansion ? i - term.length : i;
+      let end = i + needle.length - 1;
+      while (end + 1 < rows.length && end - start < 44 && rows[end + 1][1] === rows[i][1] &&
+          !/[.!?]["'”’)]*$/.test(tokens[end])) end++;
+      steps.push({ page: p + 1, start_word: start, end_word: end, quote: tokens.slice(start, end + 1).join(" ") });
+      if (steps.length === 8) return { type: "definition", fingerprint: index.sha256, steps };
+    }
+  }
+  return { type: "definition", fingerprint: index.sha256, steps };
+}
+
+module.exports = { normalizeWord, extractPhrase, resolveQuery, findExactMentions, findDefinitions, MAX_VISIBLE_MATCHES };

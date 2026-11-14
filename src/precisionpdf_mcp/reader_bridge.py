@@ -14,40 +14,39 @@ import sys
 import pymupdf
 
 from .core import AnnotationError, PDFWorkspace
-from .guided_index import file_sha256
+from .guided_index import file_sha256, _bookmarks
+from .reader_text import read_words, display_box
 
 
-def read_learning_page(root: str, filename: str, number: int) -> dict:
+def read_learning_page(root: str, filename: str, number: int, ocr_language=None, zoom=1.5, *, outline=False, cached=None) -> dict:
     workspace = PDFWorkspace(root)
     path = workspace.path(filename)
+    fingerprint = file_sha256(path)
     with pymupdf.open(path) as document:
         if document.needs_pass:
             raise AnnotationError("Encrypted PDFs are not supported in Learning Mode")
         workspace._check_page(document, number)
         page = document[number - 1]
-        if page.rotation:
-            raise AnnotationError("Rotated PDF pages are not supported in Learning Mode v0.1")
         width, height = float(page.rect.width), float(page.rect.height)
         if width <= 0 or height <= 0:
             raise AnnotationError("Invalid page dimensions")
         # Bound the rendering work and IPC payload for unexpectedly large pages.
-        scale = min(1.5, 2200 / max(width, height))
-        if scale <= 0 or width * height * scale * scale > 6_000_000:
+        scale = min(max(1.5, zoom), 2800 / max(width, height), (6_000_000 / (width * height)) ** 0.5)
+        if scale <= 0:
             raise AnnotationError("PDF page is too large to render safely")
-        words = page.get_text("words", sort=True)
-        if len(words) > 5000:
-            raise AnnotationError("More than 5000 words on one page; selection view unavailable")
-        boxes = [
-            [round(float(x0), 3), round(float(y0), 3),
-             round(float(x1), 3), round(float(y1), 3), str(text)]
-            for x0, y0, x1, y1, text, *_ in words
-        ]
+        words = read_words(page, ocr_language, cached)
+        boxes = [display_box(page, word) for word in words]
         preview = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale),
                                  alpha=False, annots=True).tobytes("png")
-        text = page.get_text("text", sort=True)
+        text = " ".join(str(word[4]) for word in words)
+        if file_sha256(path) != fingerprint:
+            raise AnnotationError("PDF changed while rendering. Try again.")
         return {
             "file": str(path.relative_to(workspace.root)),
-            "sha256": file_sha256(path),
+            "sha256": fingerprint,
+            "ocr": bool(ocr_language),
+            "sections": _bookmarks(document) if outline or number == 1 else None,
+            "ocr_words": words if ocr_language and cached is None else None,
             "page": number,
             "pages": len(document),
             "width": width,
@@ -64,9 +63,16 @@ def main() -> int:
     parser.add_argument("--root", required=True)
     parser.add_argument("--file", required=True)
     parser.add_argument("--page", required=True, type=int)
+    parser.add_argument("--ocr-language")
+    parser.add_argument("--zoom", type=float, default=1.5)
+    parser.add_argument("--outline", action="store_true")
+    parser.add_argument("--cached-ocr", action="store_true")
     args = parser.parse_args()
     try:
-        json.dump(read_learning_page(args.root, args.file, args.page), sys.stdout)
+        cached = json.load(sys.stdin) if args.cached_ocr else None
+        data = read_learning_page(args.root, args.file, args.page, args.ocr_language,
+                                  args.zoom, outline=args.outline, cached=cached)
+        json.dump(data, sys.stdout)
         sys.stdout.write("\n")
         return 0
     except (AnnotationError, OSError, RuntimeError, ValueError) as error:

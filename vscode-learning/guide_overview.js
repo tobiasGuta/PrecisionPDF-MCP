@@ -1,7 +1,5 @@
 "use strict";
 
-const { sourceAddressesTopic } = require("./relevance");
-
 const NO_DIRECT = "No directly supported answer was identified. Optional contextual connections may be available, but they do not directly answer the question.";
 
 function limitedWords(text, limit) {
@@ -13,7 +11,7 @@ function limitedWords(text, limit) {
 // A review-generated overview is optional. Trust only references to steps
 // that actually survived review as direct. This validates provenance IDs,
 // not the semantic truth of the reviewer-written summary.
-function composeReviewedOverview(review, direct, question) {
+function composeReviewedOverview(review, direct) {
   if (!direct.length) return { text: NO_DIRECT, source: "none" };
   const allowed = new Set(direct.map(step => step.evidenceId));
   const refs = review && review.overviewEvidenceIds;
@@ -24,8 +22,7 @@ function composeReviewedOverview(review, direct, question) {
       refs.every(id => typeof id === "string" && allowed.has(id)) &&
       new Set(refs).size === allowed.size &&
       summary.length >= 35 && summary.length <= 850 &&
-      !/^\s*(?:this|these|each)\s+(?:excerpt|passage|statement|quote|text)/i.test(summary) &&
-      sourceAddressesTopic(question, summary)) {
+      !/^\s*(?:this|these|each)\s+(?:excerpt|passage|statement|quote|text)/i.test(summary)) {
     return { text: summary, source: "reviewed" };
   }
 

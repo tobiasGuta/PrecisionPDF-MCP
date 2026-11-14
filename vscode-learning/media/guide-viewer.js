@@ -1,8 +1,8 @@
 "use strict";
 
 // The guide highlights the existing read-only PDF word overlay, not PDF annotations.
-function setupGuidedUI({ host, el, overlay, stage }) {
-  const guide = { plan: null, index: -1, playing: false, timer: null, pending: false, showBroader: false };
+function setupGuidedUI({ host, el, overlay, highlight, scope = () => ({}), remember = () => {} }) {
+  const guide = { fingerprint: null, plan: null, index: -1, playing: false, timer: null, pending: false, showBroader: false };
   const panel = el("guidePanel");
 
   function visibleCount() {
@@ -17,15 +17,7 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     overlay.querySelectorAll(".word.guided").forEach(node => node.classList.remove("guided"));
     if (panel.hidden || !guide.plan || guide.index < 0) return;
     const item = guide.plan.steps[guide.index];
-    const first = overlay.children[item.start_word];
-    if (!first) return;
-    for (let i = item.start_word; i <= item.end_word; i++) {
-      const box = overlay.children[i];
-      if (box) box.classList.add("guided");
-    }
-    const reader = stage.parentElement;
-    const firstTop = parseFloat(first.style.top) / 100 * stage.clientHeight + stage.offsetTop;
-    reader.scrollTo({ top: Math.max(0, firstTop - reader.clientHeight * 0.32), behavior: "smooth" });
+    highlight({ step: item, fingerprint: guide.fingerprint }, "guided");
   }
 
   function showActive() {
@@ -60,6 +52,7 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     if (!guide.plan || guide.pending || number < 0 || number >= visibleCount()) return;
     clearClock();
     guide.pending = true;
+    remember();
     host.postMessage({ type: "guideGoto", number });
   }
 
@@ -82,7 +75,7 @@ function setupGuidedUI({ host, el, overlay, stage }) {
 
   function clearResults() {
     pause();
-    guide.plan = null; guide.index = -1; guide.pending = false; guide.showBroader = false;
+    guide.plan = null; guide.fingerprint = null; guide.index = -1; guide.pending = false; guide.showBroader = false;
     el("guideResults").hidden = true;
     el("guideSteps").replaceChildren();
     el("guideBroaderSteps").replaceChildren();
@@ -105,7 +98,8 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     clearResults();
     el("guideStart").disabled = true;
     el("guideCancel").hidden = false;
-    host.postMessage({ type: "guideStart", question, approach: el("guideApproach").value });
+    remember();
+    host.postMessage({ type: "guideStart", question, approach: el("guideApproach").value, ...scope() });
   });
   el("guideRelated").addEventListener("click", () => {
     const question = el("guideQuestion").value.trim();
@@ -113,7 +107,8 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     clearResults();
     el("guideStart").disabled = true;
     el("guideCancel").hidden = false;
-    host.postMessage({ type: "guideRelated", question });
+    remember();
+    host.postMessage({ type: "guideRelated", question, ...scope() });
   });
   el("guideCancel").addEventListener("click", () => {
     host.postMessage({ type: "guideCancel" });
@@ -210,6 +205,7 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     }
     if (message.type === "guide-activate") {
       if (!guide.plan || guide.plan.steps[message.number]?.evidenceId !== message.step?.evidenceId) return true;
+      guide.fingerprint = message.fingerprint;
       guide.index = message.number;
       guide.pending = false;
       showActive();
@@ -223,7 +219,7 @@ function setupGuidedUI({ host, el, overlay, stage }) {
     overlay.querySelectorAll(".word.guided").forEach(n => n.classList.remove("guided"));
   }
 
-  return { onMessage, onPage, setMode };
+  return { onMessage, onPage, setMode, clearResults, pause };
 }
 
 globalThis.setupPrecisionPDFGuided = setupGuidedUI;

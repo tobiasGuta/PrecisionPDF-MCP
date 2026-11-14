@@ -47,8 +47,6 @@ function createUI() {
   const messages = [];
   const overlay = element("overlay");
   overlay.children = Array.from({length:10}, () => element("word"));
-  const stage = element("stage");
-  stage.parentElement = element("reader");
   const sandbox = {};
   const document = {
     createElement: tag => element(tag),
@@ -62,7 +60,10 @@ function createUI() {
   vm.runInNewContext(source, { globalThis: sandbox, document,
     setTimeout: () => ({timer:true}), clearTimeout: () => {} });
   const viewer = sandbox.setupPrecisionPDFGuided({
-    host: {postMessage: value => messages.push(value)}, el, overlay, stage
+    host: {postMessage: value => messages.push(value)}, el, overlay,
+    highlight: ({ step }, kind) => {
+      for (let i = step.start_word; i <= step.end_word; i++) overlay.children[i].classList.add(kind);
+    }
   });
   el("guidedMode").click();
   return { el, viewer, overlay, messages };

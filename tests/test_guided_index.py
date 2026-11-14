@@ -4,7 +4,7 @@ import pymupdf
 import pytest
 
 from precisionpdf_mcp.core import AnnotationError
-from precisionpdf_mcp.guided_index import build_guided_index
+from precisionpdf_mcp.guided_index import build_guided_index, build_search_index
 from precisionpdf_mcp.reader_bridge import read_learning_page
 
 
@@ -48,7 +48,7 @@ def test_confinement_and_encryption(lesson, tmp_path):
         build_guided_index(str(tmp_path), "encrypted.pdf")
 
 
-def test_reject_scans_rotation_and_page_limit(tmp_path, monkeypatch):
+def test_reject_scans_and_support_scoped_analysis(tmp_path, monkeypatch):
     scan = tmp_path / "scan.pdf"
     with pymupdf.open() as doc:
         doc.new_page()
@@ -57,10 +57,11 @@ def test_reject_scans_rotation_and_page_limit(tmp_path, monkeypatch):
         build_guided_index(str(tmp_path), "scan.pdf")
     rotated = tmp_path / "rotated.pdf"
     with pymupdf.open() as doc:
-        doc.new_page().set_rotation(90)
+        page = doc.new_page()
+        page.insert_text((50, 80), "Rotated text.")
+        page.set_rotation(90)
         doc.save(rotated)
-    with pytest.raises(AnnotationError, match="Rotated"):
-        build_guided_index(str(tmp_path), "rotated.pdf")
+    assert build_guided_index(str(tmp_path), "rotated.pdf")["excerpts"][0]["text"] == "Rotated text."
     from precisionpdf_mcp import guided_index
     monkeypatch.setattr(guided_index, "MAX_PAGES", 2)
     with pymupdf.open() as doc:
@@ -70,6 +71,8 @@ def test_reject_scans_rotation_and_page_limit(tmp_path, monkeypatch):
         doc.save(oversized)
     with pytest.raises(AnnotationError, match="1-2 pages"):
         build_guided_index(str(tmp_path), "long.pdf")
+    assert build_search_index(str(tmp_path), "long.pdf")["skipped_pages"] == [1, 2, 3]
+    assert build_guided_index(str(tmp_path), "rotated.pdf", start=1, end=1)["scope"] == [1, 1]
 
 
 def test_exceed_limits_fails_closed(lesson, monkeypatch):
@@ -123,3 +126,18 @@ def test_sentence_fragment_cap_still_covers_every_word(tmp_path):
     assert ranges[0][2] == "fragment"
     assert ranges[0][1] == MAX_EVIDENCE_WORDS - 1
     assert [n for start, end, _ in ranges for n in range(start, end + 1)] == list(range(len(words)))
+
+def test_columns_share_word_order_across_reader_find_and_guide(tmp_path):
+    source = tmp_path / "columns.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_textbox(pymupdf.Rect(50, 60, 250, 200), "Left column\ncontinues here.")
+        page.insert_textbox(pymupdf.Rect(300, 60, 500, 200), "Right column\ncontinues there.")
+        doc.new_page()
+        doc.save(source)
+    reader = read_learning_page(str(tmp_path), source.name, 1)
+    search = build_search_index(str(tmp_path), source.name)
+    guide = build_guided_index(str(tmp_path), source.name)
+    assert search["skipped_pages"] == guide["skipped_pages"] == [2]
+    assert " ".join(word[4] for word in reader["words"]) == "Left column continues here. Right column continues there."
+    assert [word[4] for word in reader["words"]] == [word[0] for word in search["word_pages"][0]]

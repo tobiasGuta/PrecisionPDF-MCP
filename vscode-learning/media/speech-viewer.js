@@ -3,7 +3,7 @@
 // Keep one user-activated Web Audio context for the entire explanation.
 // Recreating HTMLAudioElement for each sentence triggered Chromium's autoplay
 // policy at every boundary and required an extra Resume click.
-function setupPrecisionPDFSpeech({ host }) {
+function setupPrecisionPDFSpeech({ host, onSpan = () => {} }) {
   const entries = new Map();
   let activeId = null;
   let context = null;
@@ -15,11 +15,13 @@ function setupPrecisionPDFSpeech({ host }) {
   let finished = false;
   let status = "";
   let generation = 0;
+  const requests = new Map();
 
   function update() {
     for (const [id, item] of entries) {
       const active = activeId === id;
-      item.toggle.textContent = !active ? "Read aloud" : paused ? "Resume" : "Pause";
+      item.toggle.textContent = !active ? item.label : paused ? "Resume" : "Pause";
+      item.toggle.disabled = !active && item.available === false;
       item.stop.hidden = !active;
       item.status.textContent = active ? status : "";
     }
@@ -29,6 +31,7 @@ function setupPrecisionPDFSpeech({ host }) {
     const wasActive = activeId !== null;
     generation++;
     activeId = null;
+    onSpan(null);
     queue = [];
     decoded = null;
     decoding = false;
@@ -68,8 +71,9 @@ function setupPrecisionPDFSpeech({ host }) {
       const currentContext = context;
       const currentGeneration = generation;
       let buffer;
+      const segment = queue.shift();
       try {
-        const bytes = atob(queue.shift());
+        const bytes = atob(segment.data);
         const array = new Uint8Array(bytes.length);
         for (let i = 0; i < bytes.length; i++) array[i] = bytes.charCodeAt(i);
         buffer = array.buffer;
@@ -81,7 +85,7 @@ function setupPrecisionPDFSpeech({ host }) {
       currentContext.decodeAudioData(buffer).then((audio) => {
         if (generation !== currentGeneration || context !== currentContext) return;
         decoding = false;
-        decoded = audio;
+        decoded = { audio, span: segment.span };
         playNext();
       }).catch(() => {
         if (generation === currentGeneration) fail("Could not play this voice segment.");
@@ -92,7 +96,8 @@ function setupPrecisionPDFSpeech({ host }) {
     const currentContext = context;
     const currentGeneration = generation;
     const node = currentContext.createBufferSource();
-    node.buffer = decoded;
+    node.buffer = decoded.audio;
+    const span = decoded.span;
     decoded = null;
     node.connect(currentContext.destination);
     source = node;
@@ -104,7 +109,7 @@ function setupPrecisionPDFSpeech({ host }) {
       source = null;
       playNext();
     };
-    try { node.start(); }
+    try { node.start(); onSpan(span || null); }
     catch (_) { fail("Unable to start local voice playback."); }
   }
 
@@ -132,17 +137,19 @@ function setupPrecisionPDFSpeech({ host }) {
       if (generation === currentGeneration) fail("VS Code blocked audio playback.");
     });
     update();
-    host.postMessage({ type: "speechSpeak", turnId });
+    host.postMessage(requests.get(turnId)?.() || { type: "speechSpeak", turnId });
   }
 
-  function createControls(turnId) {
+  function createControls(turnId, request) {
+    if (request) requests.set(turnId, request);
     const root = document.createElement("div");
     root.className = "speech-controls";
     root.hidden = true;
     const toggle = document.createElement("button");
     toggle.type = "button";
-    toggle.textContent = "Read aloud";
-    toggle.title = "Narrate this completed response locally using Kokoro (af_heart)";
+    const idleLabel = request ? "Listen" : "Read aloud";
+    toggle.textContent = idleLabel;
+    toggle.title = "Narrate locally using Kokoro";
     const stopButton = document.createElement("button");
     stopButton.type = "button";
     stopButton.textContent = "Stop";
@@ -151,7 +158,7 @@ function setupPrecisionPDFSpeech({ host }) {
     label.className = "speech-status";
     label.setAttribute("role", "status");
     root.append(toggle, stopButton, label);
-    entries.set(turnId, { root, toggle, stop: stopButton, status: label });
+    entries.set(turnId, { root, toggle, stop: stopButton, status: label, label: idleLabel });
 
     toggle.addEventListener("click", () => {
       if (activeId !== turnId) {
@@ -187,14 +194,14 @@ function setupPrecisionPDFSpeech({ host }) {
 
   function clear() {
     stop();
-    entries.clear();
+    for (const id of entries.keys()) if (id !== 0) entries.delete(id);
   }
 
   function onMessage(message) {
     if (!message || typeof message.type !== "string" || !message.type.startsWith("speech-")) return false;
     if (message.turnId !== activeId) return true;
     if (message.type === "speech-audio") {
-      if (typeof message.data === "string") queue.push(message.data);
+      if (typeof message.data === "string") queue.push(message);
       playNext();
     } else if (message.type === "speech-done") {
       finished = true;
@@ -207,6 +214,13 @@ function setupPrecisionPDFSpeech({ host }) {
     }
     return true;
   }
-  return { createControls, complete, clear, stop, onMessage };
+  function setAvailable(turnId, available) {
+    const entry = entries.get(turnId);
+    if (entry) {
+      entry.available = available;
+      entry.toggle.disabled = activeId !== turnId && !available;
+    }
+  }
+  return { createControls, complete, clear, stop, onMessage, setAvailable };
 }
 globalThis.setupPrecisionPDFSpeech = setupPrecisionPDFSpeech;
