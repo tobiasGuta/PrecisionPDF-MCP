@@ -2,7 +2,7 @@
 
 A local PDF toolkit combining a **PrecisionPDF MCP server** for reviewable PDF annotations with an optional **VS Code Learning Mode** for interactive reading, exact document search, and Copilot-assisted explanations.
 
-> **Current components:** the MCP annotation server and the experimental **PrecisionPDF Learning Mode v0.8.2** VS Code extension. Learning Mode has been tested on real course PDFs through the VS Code Extension Development Host. It is **not** a published VS Code Marketplace extension.
+> **Current components:** the MCP annotation server and the experimental **PrecisionPDF Learning Mode v0.8.3** VS Code extension in this checkout. Learning Mode has been tested on real PDFs in VS Code. It is **not** a published VS Code Marketplace extension.
 
 ## Features
 
@@ -102,7 +102,7 @@ If the extension cannot find the repository, set `precisionpdfLearning.repositor
 
 - **Local exact search:** no Copilot request or additional API key.
 - **AI tutoring / guided explanations:** use available GitHub Copilot models through VS Code's Language Model API; existing plan limits and quotas apply. The extension has no automatic Codex or Antigravity model integration.
-- The Python PDF-rendering bridge makes no outbound network requests. **PDF text sent to Copilot can leave your machine.** Manual questions are sent only after you click **Ask**; document-wide guided analysis requests explicit confirmation.
+- The Python PDF-rendering bridge makes no outbound network requests. **PDF text sent to Copilot can leave your machine.** Manual tutoring, Guided Reading, and Copilot study actions request confirmation before sending source text. See [source grounding and comparison](vscode-learning/README.md#source-grounding-and-comparing-passages).
 - Use **OCR this page** for pages without selectable text. OCR requires local Tesseract language data. Password-protected PDFs are unsupported, and complex layouts can affect reading order.
 - Guided analysis can use the whole PDF, an outline section, or a page range. Each run has limits of **60 pages**, **350,000 indexed characters**, **1,600 excerpts**, and **30 analysis batches**, plus synthesis and relevance-review requests. Oversized documents are rejected rather than summarized as though fully analyzed.
 - Neither mode changes the original PDF. To **save** a highlight or change an existing one, use the separate MCP annotation tools.

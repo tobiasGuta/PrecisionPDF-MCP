@@ -1,5 +1,6 @@
 "use strict";
 
+const { randomUUID } = require("node:crypto");
 const { prepareBatches, generateGuide } = require("./guide");
 const { resolveQuery, findExactMentions, findDefinitions } = require("./search");
 const { referenceAt, captionAt, pageReferences, authoredLink, findCaptions } = require("./media/references");
@@ -11,11 +12,11 @@ function attachGuidedReading({ vscode, backend, send, load, currentPage, ocrPage
   let active = null;
   let activeGuideStep = null;
 
-  async function verifySource(step, fingerprint, zoom) {
+  async function verifySource(step, fingerprint, zoom, recap = false) {
     if (tutoringBusy()) throw new Error("Wait for the current explanation to finish.");
     const version = await fileVersion(backend);
     const target = currentPage();
-    const page = target?.page === step.page && target.fileVersion === version ? target : await load(step.page, { zoom });
+    const page = target?.page === step.page && target.fileVersion === version ? target : await load(step.page, { zoom, recap });
     if (!page || currentPage() !== page || page.page !== step.page || page.sha256 !== fingerprint) {
       throw new Error("The PDF changed or the source is unavailable. The saved text is still available.");
     }
@@ -119,6 +120,7 @@ function attachGuidedReading({ vscode, backend, send, load, currentPage, ocrPage
           flags.push("--start", String(first), "--end", String(last));
         }
         progress("Indexing selected PDF pages locally…");
+        const version = await fileVersion(backend);
         const index = await readerProcess(backend, "guided_index", flags, signal, ocr);
         const count = prepareBatches(index).length + 2;
         const [first, last] = index.scope;
@@ -134,11 +136,12 @@ function attachGuidedReading({ vscode, backend, send, load, currentPage, ocrPage
           send({ type: channel + "-cancelled" });
           return;
         }
+        if (version !== await fileVersion(backend)) throw new Error("The PDF changed. Run the analysis again.");
         const models = await vscode.lm.selectChatModels({ vendor: "copilot" });
         signal.throwIfAborted();
         const model = models[0];
         if (!model) throw new Error("No Copilot model available. Sign in and verify model access in VS Code.");
-        plan = await generateGuide({ index: { ...index, scopeLabel: scope }, question, onProgress: progress,
+        plan = await generateGuide({ index: { ...index, scopeLabel: scope }, question, onProgress: progress, mode: message.grounding,
           sendModel: async prompt => {
             signal.throwIfAborted();
             const request = vscode.LanguageModelChatMessage.User(prompt);
@@ -156,6 +159,9 @@ function attachGuidedReading({ vscode, backend, send, load, currentPage, ocrPage
             return body;
           }
         });
+        if (version !== await fileVersion(backend)) throw new Error("The PDF changed during analysis. Run it again.");
+        plan.recapId = randomUUID();
+        plan.question = question;
         plan.overview = scope + coverage + "\n\n" + plan.overview;
       }
       signal.throwIfAborted();
@@ -212,7 +218,17 @@ function attachGuidedReading({ vscode, backend, send, load, currentPage, ocrPage
     return quote === activeGuideStep.quote ? activeGuideStep.explanation : "";
   }
 
-  return { handle, verifySource, guideExplanation, isWorking: () => Boolean(active) };
+  async function recapStep(id, number, zoom) {
+    const plan = plans.get("guide");
+    const step = plan?.type === "guided" && plan.recapId === id && Number.isInteger(number) &&
+      number >= 0 && number < Math.min(plan.directCount, 3) ? plan.steps[number] : null;
+    if (!step || active) throw new Error("Run Guided Reading to prepare a recap.");
+    await verifySource(step, plan.fingerprint, zoom, true);
+    if (plans.get("guide") !== plan) throw new Error("The guide changed. Start its new recap.");
+    return { step, fingerprint: plan.fingerprint };
+  }
+
+  return { handle, verifySource, guideExplanation, recapStep, isWorking: () => Boolean(active) };
 }
 
 module.exports = { attachGuidedReading };

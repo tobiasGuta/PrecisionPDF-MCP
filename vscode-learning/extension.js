@@ -6,6 +6,9 @@ const fs = require("node:fs");
 const { readerProcess, fileVersion } = require("./reader_process");
 const { randomBytes } = require("node:crypto");
 const { findWorkspacePdfs } = require("./pdf_picker");
+const { groundedAnswer, modeFor } = require("./grounding");
+const { comparisonSources } = require("./comparison");
+const { visualContext, explainVisual } = require("./visual");
 const { buildPrompt } = require("./prompt");
 const { TutorSession } = require("./session");
 const { attachGuidedReading } = require("./guided_controller");
@@ -92,13 +95,13 @@ function makeHtml(context, webview) {
     .replaceAll("{{JS}}", uri("viewer.js"));
 }
 
-async function openLearningMode(context, uri) {
-  let picked;
-  if (uri) {
+async function openLearningMode(context, uri, citation) {
+  let picked = citation?.target;
+  if (!picked && uri) {
     const folder = vscode.workspace.getWorkspaceFolder(uri);
     if (!folder || !/\.pdf$/i.test(uri.path)) return;
     picked = { root: folder.uri.fsPath, filename: path.relative(folder.uri.fsPath, uri.fsPath) };
-  } else {
+  } else if (!picked) {
     picked = await pickPdf();
   }
   if (!picked) return;
@@ -124,23 +127,62 @@ async function openLearningMode(context, uri) {
   let pageData = null;
   let busy = false;
   let tokenSource = null;
+  let comparison = [];
+  let localWork = null;
   const session = new TutorSession();
   const answers = new Map();
   const pins = [];
   let turnSerial = 0;
   let loadSerial = 0;
+  let recapSerial = 0;
 
   const send = (message) => { if (!disposed) void panel.webview.postMessage(message); };
   const speech = new SpeechService({ repo, send });
   panel.onDidDispose(() => {
     disposed = true;
     pageRequest?.abort();
+    localWork?.abort();
     if (tokenSource) tokenSource.cancel();
     speech.dispose();
   });
 
+  async function chooseComparison() {
+    const uris = await vscode.window.showOpenDialog({
+      canSelectFiles: true, canSelectFolders: false, canSelectMany: true,
+      filters: { PDF: ["pdf"] }, title: "Choose 2–4 workspace PDFs to compare", openLabel: "Use PDFs"
+    });
+    if (!uris) return;
+    const targets = new Map();
+    for (const uri of uris) {
+      const folder = vscode.workspace.getWorkspaceFolder(uri);
+      if (!folder || !/\.pdf$/i.test(uri.path)) throw new Error("Choose PDFs inside your open workspace.");
+      const root = folder.uri.fsPath;
+      const filename = path.relative(root, uri.fsPath);
+      targets.set(uri.fsPath, { root, filename,
+        label: (vscode.workspace.workspaceFolders?.length > 1 ? folder.name + "/" : "") + filename.replace(/\s+/g, " ") });
+    }
+    if (targets.size < 2 || targets.size > 4) throw new Error("Choose 2–4 PDFs to compare.");
+    comparison = [...targets.values()];
+    if (new Set(comparison.map(target => target.label)).size !== comparison.length) {
+      comparison.forEach((target, index) => { target.label = (index + 1) + " · " + target.label; });
+    }
+    send({ type: "comparison-list", labels: comparison.map(target => target.label) });
+  }
 
-  const load = async (pageNumber, { zoom, language, restore } = {}) => {
+  async function comparisonEvidence(question, signal) {
+    const documents = [];
+    for (const target of comparison) {
+      const config = { uv, repo, ...target };
+      const version = await fileVersion(config);
+      const index = await readerProcess(config, "guided_index", ["--search"], signal);
+      if (version !== await fileVersion(config)) throw new Error("A comparison PDF changed while indexing. Try again.");
+      documents.push({ target, label: target.label, index, version });
+    }
+    return { ...comparisonSources(documents, question),
+      documents: documents.map(({ target, version }) => ({ target, version })) };
+  }
+
+  const load = async (pageNumber, { zoom, language, restore, recap } = {}) => {
     const n = Number(pageNumber);
     if (!Number.isSafeInteger(n) || n < 1 || (pageData && n > pageData.pages)) {
       send({ type: "page-error", message: "Page is outside the document." });
@@ -150,7 +192,7 @@ async function openLearningMode(context, uri) {
     pageRequest?.abort();
     const request = new AbortController();
     pageRequest = request;
-    send({ type: "loading" });
+    send({ type: "loading", recap });
     try {
       const version = await fileVersion(backend);
       if (ocrVersion !== version) { ocr.clear(); ocrVersion = version; }
@@ -200,6 +242,12 @@ async function openLearningMode(context, uri) {
 
   const study = attachStudy({ vscode, state: context.workspaceState, key: path.join(picked.root, picked.filename),
     send, panel, currentPage: () => pageData, busy: () => busy || Boolean(pageRequest) || guided.isWorking(),
+    checkSource: async source => {
+      const current = pageData;
+      if (!current || current.sha256 !== source.fingerprint || current.fileVersion !== await fileVersion(backend)) {
+        throw new Error("The PDF changed. Keep the saved question or create a new check from the current PDF.");
+      }
+    },
     reveal: async source => {
       const version = await fileVersion(backend);
       if (source.ocr && !ocr.has(source.page) && pageData?.sha256 === source.fingerprint &&
@@ -210,6 +258,25 @@ async function openLearningMode(context, uri) {
       send({ type: "study-source", step: source, fingerprint: source.fingerprint });
     }
   });
+
+  async function askModel(model, token, text, image) {
+    if (token.isCancellationRequested) throw new Error("Explanation cancelled.");
+    const content = image ? [new vscode.LanguageModelTextPart(text), image] : text;
+    const message = vscode.LanguageModelChatMessage.User(content);
+    if (await model.countTokens(message, token) > model.maxInputTokens) {
+      throw new Error("The prompt exceeds the model’s context limit. Try a smaller selection.");
+    }
+    if (token.isCancellationRequested) throw new Error("Explanation cancelled.");
+    const response = await model.sendRequest([message], {}, token);
+    let body = "";
+    for await (const chunk of response.text) {
+      if (token.isCancellationRequested) throw new Error("Explanation cancelled.");
+      body += chunk;
+      if (body.length > 16000) throw new Error("Copilot returned too much text.");
+    }
+    if (token.isCancellationRequested) throw new Error("Explanation cancelled.");
+    return body;
+  }
 
   const explain = async (request) => {
     if (busy || pageRequest || guided.isWorking()) {
@@ -224,51 +291,96 @@ async function openLearningMode(context, uri) {
     let success = false;
     let turnId;
     try {
-      const { passage } = session.prepare(pageData.page, selectedQuote(request));
-      const scope = request.scope === "selection" ? "selection" : "page";
-      const prompt = promptFor(userQuestion, passage, scope);
-      const history = scope === "page" ? session.history() : "";
+      const page = pageData;
+      const scope = ["pins", "selection", "comparison", "visual"].includes(request.scope) ? request.scope : "page";
+      const mode = modeFor(request.grounding);
+      const isVisual = scope === "visual";
+      const isComparison = scope === "comparison";
+      const regionContext = isVisual ? visualContext(page, request.box) : null;
+      if (isComparison && !comparison.length) throw new Error("Choose the PDFs you want to compare first.");
       busy = true;
+      localWork = new AbortController();
+      const signal = localWork.signal;
+      if (isComparison) send({ type: "tutor-status", message: "Finding matching passages locally…" });
+      const evidence = isComparison ? await comparisonEvidence(userQuestion, signal) : null;
+      signal.throwIfAborted();
+      const sources = evidence?.sources ?? (isVisual ? [] : tutoringSources(request, scope));
+      if (!isVisual && !sources.length) throw new Error(isComparison
+        ? "No matching selectable text in the chosen PDFs. Try a question with a term used in the readings."
+        : scope === "pins" ? "Pin a passage first." : "Select a passage or open a page with selectable text.");
+      const { passage } = session.prepare(page.page, ["pins", "comparison", "visual"].includes(scope) ? "" : selectedQuote(request));
+      const prompt = isComparison
+        ? "Compare the selected PDFs using the supplied passages. Attribute views to the correct document. Lack of a retrieved passage is not proof a document omits the topic."
+        : promptFor(userQuestion, passage, scope, mode, true);
+      const history = scope === "page" ? session.history() : "";
+      const payload = isVisual ? "the selected PDF image region and nearby text"
+        : sources.length + " PDF excerpt(s)" + (history ? " and recent discussion" : "");
+      const agreed = await vscode.window.showWarningMessage(
+        "Send " + payload + " to GitHub Copilot for an answer and support assessment (up to two requests)?" +
+        (evidence ? "\n\n" + evidence.coverage.join("\n") : ""),
+        { modal: true }, "Ask Copilot");
+      if (agreed !== "Ask Copilot" || disposed || signal.aborted) return send({ type: "tutor-rejected", message: "Question cancelled." });
+      const currentVersion = await fileVersion(backend);
+      if (page !== pageData || page.fileVersion !== currentVersion) {
+        throw new Error("The PDF changed. Reload the source page and try again.");
+      }
       started = true;
       turnId = ++turnSerial;
       tokenSource = new vscode.CancellationTokenSource();
-      send({ type: "thinking", question: userQuestion, page: pageData.page, passage, turnId });
-      // Model access and authentication prompts occur only following the user's Ask click.
+      send({ type: "thinking", question: userQuestion, page: page.page, passage, scope, turnId });
       const models = await vscode.lm.selectChatModels({ vendor: "copilot" });
-      if (!models.length) {
-        throw new Error("No Copilot model is available to this extension. Sign into GitHub Copilot in VS Code, or use Copy Prompt to ask in your existing chat.");
+      const model = isVisual ? models.find(candidate => candidate.capabilities?.supportsImageToText === true)
+        ?? models.find(candidate => candidate.capabilities?.supportsImageToText === undefined) : models[0];
+      if (isVisual && (!model || !vscode.LanguageModelDataPart?.image)) {
+        throw new Error("Visual explanations require a Copilot model and VS Code version that support image input.");
       }
-      const messages = [vscode.LanguageModelChatMessage.User(
-        (history ? "Earlier conversation (reference only; not document evidence):\n" + history + "\n\n" : "") + prompt
-      )];
-      if (await models[0].countTokens(messages[0], tokenSource.token) > models[0].maxInputTokens) {
-        throw new Error("The prompt exceeds the model’s context limit. Try Selected passage only.");
-      }
-      if (tokenSource.token.isCancellationRequested) throw new Error("Explanation cancelled.");
-      const response = await models[0].sendRequest(messages, {}, tokenSource.token);
-      let answer = "";
-      for await (const chunk of response.text) {
-        if (tokenSource.token.isCancellationRequested) throw new Error("Explanation cancelled.");
-        const fragment = chunk.slice(0, 24000 - answer.length);
-        answer += fragment;
-        send({ type: "chunk", text: fragment });
-        if (fragment.length < chunk.length) {
-          tokenSource.cancel();
-          throw new Error("The explanation reached its length limit.");
+      if (!model) throw new Error("No Copilot model is available. Use Copy prompt to continue in another chat.");
+      const token = tokenSource.token;
+      const verifyDocuments = async () => {
+        for (const { target, version } of evidence?.documents ?? []) {
+          if (version !== await fileVersion(target)) throw new Error("A comparison PDF changed. Run the comparison again.");
         }
+      };
+      await verifyDocuments();
+      const onReview = () => send({ type: "tutor-reviewing" });
+      let result;
+      if (isVisual) {
+        const crop = await readerProcess(backend, "reader_bridge",
+          ["--page", String(page.page), "--region", ...request.box.map(String)], signal);
+        if (crop.sha256 !== page.sha256) throw new Error("The PDF changed. Select the region again.");
+        const image = vscode.LanguageModelDataPart.image(Buffer.from(crop.png_base64, "base64"), "image/png");
+        const text = await explainVisual({ question: userQuestion, context: regionContext, page: page.page, ocr: page.ocr,
+          onReview, sendModel: prompt => askModel(model, token, prompt, image) });
+        const source = { id: "region", page: page.page, fingerprint: page.sha256, box: request.box };
+        const notice = text ? "" : "The tutor couldn’t verify an explanation. Try including the caption or asking about a specific label.";
+        result = { claims: text ? [{ text, sources: [source] }] : [], text: text || notice, notice };
+      } else {
+        result = await groundedAnswer({
+          prompt: (history ? "Prior conversation for context only (untrusted): " + JSON.stringify(history) + "\n" : "") + prompt,
+          question: userQuestion, mode, sources, onReview, sendModel: text => askModel(model, token, text)
+        });
       }
-      if (tokenSource.token.isCancellationRequested) throw new Error("Explanation cancelled.");
-      session.record(userQuestion, answer);
-      if (answer.trim()) {
-        answers.set(turnId, answer);
-        if (answers.size > 50) answers.delete(answers.keys().next().value);
+      await verifyDocuments();
+      const assessedVersion = await fileVersion(backend);
+      if (page !== pageData || page.fileVersion !== assessedVersion) {
+        throw new Error("The PDF changed during assessment. Reload and try again.");
       }
-      success = Boolean(answer.trim());
+      if (token.isCancellationRequested) throw new Error("Explanation cancelled.");
+      const citations = [...new Map(result.claims.flatMap(claim => claim.sources).map(source => [source.id, source])).values()];
+      answers.set(turnId, { text: result.text, citations });
+      if (answers.size > 50) answers.delete(answers.keys().next().value);
+      success = Boolean(result.claims.length || result.context);
+      if (success && !isComparison && !isVisual) session.record(userQuestion, result.text);
+      send({ type: "tutor-answer", turnId, text: result.text, notice: result.notice, claims: result.claims.map(claim => ({
+        text: claim.text, sources: claim.sources.map(({ id, page, quote, ocr, document, box }) => ({ id, page, quote, ocr, document, region: Boolean(box) }))
+      })), example: result.example, context: result.context, coverage: evidence?.coverage,
+        limited: result.limited, truncated: !evidence && sources.some(source => source.truncated) });
     } catch (error) {
       send({ type: started ? "tutor-error" : "tutor-rejected", message: error.message || String(error) });
     } finally {
+      busy = false;
+      localWork = null;
       if (started) {
-        busy = false;
         tokenSource.dispose();
         tokenSource = null;
         send({ type: "done", turnId, success, speechAvailable: success });
@@ -284,12 +396,52 @@ async function openLearningMode(context, uri) {
     return pageData.words.slice(start, end + 1).map(word => word[4]).join(" ");
   }
 
-  function promptFor(question, passage, scope) {
+  function tutoringSources(request, scope) {
+    const sources = new Map();
+    function add(source, role) {
+      if (!source) return;
+      const key = source.page + ":" + source.start_word + ":" + source.end_word;
+      if (!sources.has(key)) sources.set(key, { ...source, role, id: "s" + (sources.size + 1) });
+    }
+    if (scope !== "pins") {
+      const selection = selectedQuote(request);
+      if (scope === "selection" && !selection) throw new Error("Select a passage first.");
+      if (selection) add(boundedSource(sourceFor(pageData, request.start, request.end), 2500), "selection");
+      if (scope === "page") {
+        const source = sourceFor(pageData, 0, pageData.words.length - 1);
+        if (source) add(boundedSource(source, 12000), "current page");
+      }
+    }
+    if (scope !== "selection") {
+      for (const pin of pins) if (pin.fingerprint === pageData.sha256) add(pin, "pin");
+    }
+    return [...sources.values()];
+  }
+
+  function boundedSource(source, limit) {
+    if (source.quote.length <= limit) return source;
+    const words = pageData.words.slice(source.start_word, source.end_word + 1);
+    let count = 0;
+    let length = 0;
+    while (count < words.length && length + words[count][4].length <= limit) {
+      length += words[count++][4].length + 1;
+    }
+    const excerpt = sourceFor(pageData, source.start_word, source.start_word + count - 1);
+    return excerpt ? { ...excerpt, truncated: true } : null;
+  }
+
+  function promptFor(question, passage, scope, mode, structured = false) {
     if (scope === "selection" && !passage) throw new Error("Select a passage first.");
-    return buildPrompt({ file: picked.filename, page: pageData.page, selection: passage,
-      pageText: scope === "page" ? pageData.text : "", pins: scope === "page" ?
-        pins.filter(pin => pin.fingerprint === pageData.sha256) : [],
-      question, ocr: pageData.ocr });
+    if (scope === "pins" && !pins.length) throw new Error("Pin a passage first.");
+    const policy = modeFor(mode) === "contextual"
+      ? "Label outside knowledge separately from PDF evidence."
+      : "Use the supplied evidence for document claims and state what cannot be established. A labeled hypothetical may illustrate a supported point. Do not fill gaps from outside knowledge.";
+    if (structured) return policy +
+      (scope === "pins" ? "\nCompare the pinned passages, including differences in conditions and unresolved conflicts." : "");
+    return policy + "\n" + buildPrompt({ file: picked.filename, page: pageData.page,
+      selection: scope === "pins" ? "" : passage, pageText: scope === "page" ? pageData.text : "",
+      pins: scope !== "selection" ? pins.filter(pin => pin.fingerprint === pageData.sha256) : [],
+      comparison: scope === "pins", question, ocr: pageData.ocr });
   }
 
   function copy(text) {
@@ -300,6 +452,25 @@ async function openLearningMode(context, uri) {
   panel.webview.onDidReceiveMessage((message) => {
     if (!message || typeof message.type !== "string") return;
     if (guided.handle(message) || study.handle(message)) return;
+    if (message.type === "comparisonChoose") {
+      if (!busy) void chooseComparison().catch(error => send({ type: "tutor-status", message: error.message }));
+      return;
+    }
+    if (message.type === "recapStep") {
+      const serial = ++recapSerial;
+      if (pageRequest || busy) {
+        send({ type: "speech-error", turnId: "recap", message: "Wait for the current request to finish." });
+        return;
+      }
+      void guided.recapStep(message.id, message.number, message.zoom).then(result => {
+        if (disposed || serial !== recapSerial) return;
+        send({ type: "recap-source", ...result });
+        speech.speak("recap", result.step.explanation, { speed: message.speed });
+      }).catch(error => {
+        if (serial === recapSerial) send({ type: "speech-error", turnId: "recap", message: error.message });
+      });
+      return;
+    }
     if (message.type === "speechGuide") {
       const text = pageRequest ? "" : guided.guideExplanation(message.evidenceId);
       if (text) speech.speak("guide", text, { speed: message.speed });
@@ -307,16 +478,48 @@ async function openLearningMode(context, uri) {
       return;
     }
     if (message.type === "speechSpeak") {
-      const answer = answers.get(message.turnId);
+      const answer = answers.get(message.turnId)?.text;
       if (answer) speech.speak(message.turnId, answer);
       else send({ type: "speech-error", turnId: message.turnId,
         message: "This finished response is no longer available for narration." });
       return;
     }
-    if (message.type === "speechStop") { speech.stop(); return; }
+    if (message.type === "pinGoto" || message.type === "tutorSource") {
+      const source = message.type === "pinGoto" ? pins[message.number]
+        : answers.get(message.turnId)?.citations.find(item => item.id === message.id);
+      if (source && !pageRequest && !guided.isWorking() && !busy) {
+        void (async () => {
+          if (source.target) {
+            if (await fileVersion(source.target) !== source.version) throw new Error("That PDF changed. Run the comparison again.");
+            await openLearningMode(context, null, source);
+          } else if (source.box) {
+            const version = await fileVersion(backend);
+            const rendered = pageData?.page === source.page && pageData.fileVersion === version ? pageData
+              : await load(source.page, { zoom: message.zoom });
+            if (!rendered || rendered !== pageData || rendered.sha256 !== source.fingerprint) throw new Error("The PDF region has changed.");
+            send({ type: "region-source", page: source.page, fingerprint: source.fingerprint, box: source.box });
+          } else {
+            await guided.verifySource(source, source.fingerprint, message.zoom);
+            send({ type: "evidence-source", step: source, fingerprint: source.fingerprint });
+          }
+        })()
+          .catch(error => send({ type: "reader-notice", message: error.message }));
+      }
+      return;
+    }
+    if (message.type === "speechStop") { recapSerial++; speech.stop(); return; }
     if (message.type === "ready") {
       study.publish();
       void (async () => {
+        if (citation) {
+          try {
+            await guided.verifySource(citation, citation.fingerprint);
+            send({ type: "evidence-source", step: citation, fingerprint: citation.fingerprint });
+          } catch (error) {
+            send({ type: "reader-notice", message: error.message });
+          }
+          return;
+        }
         if (position?.page > 1 && (await load(position.page, { restore: position, zoom: position.zoom }))?.sha256 === position.fingerprint) return;
         await load(1, { restore: position, zoom: position?.zoom });
       })();
@@ -338,7 +541,7 @@ async function openLearningMode(context, uri) {
       }
     }
     if (message.type === "ask") void explain(message);
-    if (message.type === "cancelAsk") tokenSource?.cancel();
+    if (message.type === "cancelAsk") { localWork?.abort(); tokenSource?.cancel(); }
     if (message.type === "selectionCleared" && !busy) session.clearSelection();
     if (message.type === "readSelection" || message.type === "readPage") {
       const valid = !pageRequest && pageData?.page === message.page && pageData?.sha256 === message.fingerprint;
@@ -354,7 +557,8 @@ async function openLearningMode(context, uri) {
     if (["quote", "pin", "copy"].includes(message.type) && pageData && !pageRequest) {
       const quote = selectedQuote(message);
       if (message.type === "copy") {
-        try { copy(promptFor(message.question, quote || session.passage, message.scope === "selection" ? "selection" : "page")); }
+        if (["comparison", "visual"].includes(message.scope)) return;
+        try { copy(promptFor(message.question, quote || session.passage, ["pins", "selection"].includes(message.scope) ? message.scope : "page", message.grounding)); }
         catch (error) { send({ type: "reader-notice", message: error.message }); }
       } else if (!quote) {
         send({ type: "reader-notice", message: "Select text on the current page first." });
@@ -362,7 +566,9 @@ async function openLearningMode(context, uri) {
         copy("“" + quote + "” — " + picked.filename + ", PDF page " + pageData.page +
           (pageData.ocr ? " (OCR)" : ""));
       } else if (pins.length < 3) {
-        pins.push({ quote: quote.slice(0, 2500), page: pageData.page, fingerprint: pageData.sha256, ocr: pageData.ocr });
+        const pin = boundedSource(sourceFor(pageData, message.start, message.end), 2500);
+        if (!pin) return send({ type: "reader-notice", message: "Select a shorter passage." });
+        pins.push(pin);
         send({ type: "pins", pins });
       } else {
         send({ type: "reader-notice", message: "Remove a pinned passage before adding another." });

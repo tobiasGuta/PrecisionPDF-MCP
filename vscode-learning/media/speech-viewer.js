@@ -3,7 +3,7 @@
 // Keep one user-activated Web Audio context for the entire explanation.
 // Recreating HTMLAudioElement for each sentence triggered Chromium's autoplay
 // policy at every boundary and required an extra Resume click.
-function setupPrecisionPDFSpeech({ host, onSpan = () => {} }) {
+function setupPrecisionPDFSpeech({ host, onSpan = () => {}, continuePlayback = () => false }) {
   const entries = new Map();
   let activeId = null;
   let context = null;
@@ -64,7 +64,11 @@ function setupPrecisionPDFSpeech({ host, onSpan = () => {} }) {
     if (activeId === null || !context || paused || source || decoding) return;
     if (!decoded) {
       if (!queue.length) {
-        if (finished) stop(false);
+        if (finished) {
+          finished = false;
+          if (!continuePlayback(activeId)) stop(false);
+          else { status = "Loading next passage…"; update(); }
+        }
         else { status = "Generating speech locally…"; update(); }
         return;
       }

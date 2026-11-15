@@ -4,11 +4,11 @@
  * The document is evidence, not an instruction source.
  * Keep requests bounded so accidental long selections are not sent to the model.
  */
-function buildPrompt({ file, page, selection, pageText, question, pins = [], ocr = false }) {
+function buildPrompt({ file, page, selection, pageText, question, pins = [], ocr = false, comparison = false }) {
   const ask = String(question || "Explain this passage clearly with an example.").trim().slice(0, 1500);
   const quote = String(selection || "").trim().slice(0, 2500);
   const context = String(pageText || "").slice(0, 12000);
-  const pinContext = pins.slice(0, 3).map(pin => "PDF page " + pin.page +
+  const pinContext = pins.slice(0, 3).map((pin, i) => (comparison ? "Passage " + (i + 1) + " · " : "") + "PDF page " + pin.page +
     (pin.ocr ? " (OCR)" : "") + ": " + JSON.stringify(pin.quote)).join("\n");
   const filename = String(file || "document").slice(0, 200);
   if (!ask) throw new Error("Enter a question first.");
@@ -17,6 +17,13 @@ function buildPrompt({ file, page, selection, pageText, question, pins = [], ocr
     "You are a patient academic reading tutor. Explain the requested passage in plain language.",
     "Use the supplied PDF excerpt as evidence, cite its page number, and clearly distinguish",
     "what the author says from your own interpretation. Give a concrete example when useful.",
+    "Explain the mechanism, distinction, or implication the learner is asking about instead of repeating the excerpt.",
+    "Match the depth of the learner's question and their own stated reasoning. Address a specific gap when visible.",
+    ...(comparison ? [
+      "Compare only the numbered pinned passages. Cite their passage numbers and PDF pages.",
+      "State what each passage says, then explain the relationship and any differences in scope or assumptions.",
+      "Label inferred relationships as interpretation. If the passages do not establish a relationship or conflict, explain the missing evidence."
+    ] : []),
     "If context is insufficient, say what is missing; do not invent citations or facts.",
     "Use the page labels of pinned passages and earlier quotes when comparing sources.",
     "Previous tutor answers are interpretations, not primary source evidence. Do not assume an",

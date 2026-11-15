@@ -13,8 +13,13 @@ function plainSpeech(markdown) {
   return String(markdown || "")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/https?:\/\/\S+/g, "")
-    .replace(/<[^>]*>/g, "")
-    .replace(/[#*_~>|]/g, " ")
+    .replace(/<(p|strong|b|em|i|span|code|sub|sup)>(.*?)<\/\1>/gis, "$2")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
+    .replace(/\*\*([^*\n]+)\*\*|~~([^~\n]+)~~/g, (_, bold, strike) => bold ?? strike)
+    .replace(/(?<!\w)([*_])([^\s*_][^*_\n]*?)\1(?!\w)/g, "$2")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
     .replace(/\s+/g, " ").trim();
 }
 
@@ -47,7 +52,7 @@ class SpeechService {
     if (this.closed) return;
     this.stop();
     const text = verbatim ? markdown.trim() : plainSpeech(markdown);
-    const validTurn = turnId === "guide" || (Number.isSafeInteger(turnId) && turnId >= 0);
+    const validTurn = turnId === "guide" || turnId === "recap" || (Number.isSafeInteger(turnId) && turnId >= 0);
     if (!validTurn || !text || text.length > (source ? 24000 : MAX_TEXT)) {
       this.send({ type: "speech-error", turnId,
         message: source ? "This page is too long to narrate at once. Select a passage." :

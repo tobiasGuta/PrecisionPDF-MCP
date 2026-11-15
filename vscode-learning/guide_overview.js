@@ -2,23 +2,14 @@
 
 const NO_DIRECT = "No directly supported answer was identified. Optional contextual connections may be available, but they do not directly answer the question.";
 
-function limitedWords(text, limit) {
-  const value = String(text || "").replace(/\s+/g, " ").trim();
-  if (value.length <= limit) return value;
-  return value.slice(0, limit).replace(/\s+\S*$/, "").trim().replace(/[,:;]+$/, "") + "…";
-}
-
-// A review-generated overview is optional. Trust only references to steps
-// that actually survived review as direct. This validates provenance IDs,
-// not the semantic truth of the reviewer-written summary.
-function composeReviewedOverview(review, direct) {
+// Show the assessed draft only when its evidence survived review.
+function composeReviewedOverview(draft, review, direct) {
   if (!direct.length) return { text: NO_DIRECT, source: "none" };
   const allowed = new Set(direct.map(step => step.evidenceId));
   const refs = review && review.overviewEvidenceIds;
-  const summary = typeof review?.directOverview === "string"
-    ? review.directOverview.replace(/\s+/g, " ").trim() : "";
+  const summary = typeof draft === "string" ? draft.trim() : "";
 
-  if (Array.isArray(refs) && refs.length === allowed.size &&
+  if (review?.overviewSupported === true && Array.isArray(refs) && refs.length === allowed.size &&
       refs.every(id => typeof id === "string" && allowed.has(id)) &&
       new Set(refs).size === allowed.size &&
       summary.length >= 35 && summary.length <= 850 &&
@@ -26,14 +17,12 @@ function composeReviewedOverview(review, direct) {
     return { text: summary, source: "reviewed" };
   }
 
-  // Fail closed to short, exact source quotations when model output is
-  // missing, malformed or names evidence rejected by the reviewer.
-  const samples = direct.slice(0, 3).map(step => {
-    const quote = limitedWords(step.quote, 210);
-    return "Page " + step.page + ': “' + quote + '”';
-  });
+  // Keep excerpts whole so the fallback cannot cut off a qualification.
+  const samples = direct.filter(step => step.quote.length <= 850).slice(0, 3)
+    .map(step => "Page " + step.page + ': “' + step.quote + '”');
   return {
-    text: "The directly relevant passages state: " + samples.join(" "),
+    text: samples.length ? "The directly relevant passages state: " + samples.join(" ")
+      : "See the reviewed source passages in the guide.",
     source: "source-excerpts"
   };
 }

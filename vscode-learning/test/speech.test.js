@@ -10,6 +10,13 @@ test("Markdown is converted to plain local narration", () => {
     "Overview Neural networks use layers.");
 });
 
+test("narration preserves inequalities, signed values, and units through markup cleanup", () => {
+  assert.equal(plainSpeech("## Limits\n**If x < y and y > z**, use -2 °C and 5 µg."),
+    "Limits If x < y and y > z, use -2 °C and 5 µg.");
+  assert.equal(plainSpeech("x &lt; y, a_b = 3 * 2, and <em>keep</em> the bound."),
+    "x < y, a_b = 3 * 2, and keep the bound.");
+  assert.equal(plainSpeech("The branch uses a<b && c>d."), "The branch uses a<b && c>d.");
+});
 class FakeChild extends EventEmitter {
   constructor() {
     super();

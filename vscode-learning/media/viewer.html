@@ -71,6 +71,7 @@
           <button id="clear" disabled>Clear selection</button>
           <button id="studyStart" disabled>Check understanding</button>
           <button id="definitionStart" disabled>Find definition</button>
+          <button id="visualSelect" type="button" aria-pressed="false">Explain figure / equation</button>
           <div id="selectionSpeech"></div>
           <select id="listenSpeed" aria-label="Narration speed">
             <option value="0.8">0.8×</option><option value="1" selected>1×</option><option value="1.2">1.2×</option>
@@ -86,6 +87,7 @@
         <div id="stage" hidden>
           <img id="pageImage" draggable="false" alt="Rendered PDF page">
           <div id="overlay" aria-label="Select a passage by dragging across PDF words"></div>
+          <div id="visualBox" hidden></div>
         </div>
       </div>
     </section>
@@ -111,10 +113,23 @@
             <select id="tutorScope">
               <option value="page">Page, pins &amp; recent chat</option>
               <option value="selection">Selection only</option>
+              <option value="pins">Pinned passages only</option>
+              <option value="comparison">Compare PDFs</option>
+              <option id="visualScope" value="visual" disabled>Selected image region</option>
             </select>
           </span>
+          <div id="comparisonControls" hidden>
+            <button id="comparisonChoose" type="button">Choose PDFs</button>
+            <p id="comparisonList" class="hint"></p>
+          </div>
           <blockquote id="selection" class="selection" hidden></blockquote>
         </div>
+        <label class="scope-control">Explanation mode
+          <select id="tutorGrounding">
+            <option value="strict">Strict Source</option>
+            <option value="contextual">Contextual Explanation</option>
+          </select>
+        </label>
         <label for="question">Question</label>
         <textarea id="question" rows="2" placeholder="What would you like to understand?">Explain this passage simply, with a practical example.</textarea>
         <p id="threadStatus" class="hint" role="status"></p>
@@ -135,6 +150,12 @@
                 <option value="auto">Automatic</option>
                 <option value="exact">Exact wording · local</option>
                 <option value="guided">Explanation · Copilot</option>
+              </select>
+            </label>
+            <label>Explanation mode
+              <select id="guideGrounding">
+                <option value="strict">Strict Source</option>
+                <option value="contextual">Contextual Explanation</option>
               </select>
             </label>
             <label>Pages for analysis
@@ -162,7 +183,20 @@
             <p id="guideOverview"></p>
             <p class="hint" id="guideReviewInfo" hidden></p>
           </div>
+          <div id="guideContext" class="guide-summary" hidden>
+            <h3>Additional model context</h3>
+            <p id="guideContextText"></p>
+          </div>
           <button id="guideRelated" hidden>Explore related ideas with Copilot</button>
+          <section id="recap" class="guide-summary" hidden aria-label="Audio recap">
+            <div id="recapSpeech"></div>
+            <div id="recapRecall" hidden>
+              <label for="recapAnswer" id="recapQuestion"></label>
+              <textarea id="recapAnswer" rows="3" maxlength="3000" placeholder="Answer in your own words"></textarea>
+              <button id="recapReveal" type="button">Show evidence</button>
+              <div id="recapEvidence" hidden></div>
+            </div>
+          </section>
           <div class="guide-controls">
             <button id="guidePrev" disabled>Previous</button>
             <button id="guidePlay" title="Automatically advance to the next passage">Play</button>
@@ -199,13 +233,16 @@
       <textarea id="studyQuestion" rows="2" maxlength="600"></textarea>
       <label for="studyAnswer">Your answer</label>
       <textarea id="studyAnswer" rows="4" maxlength="3000" placeholder="Try answering from memory."></textarea>
-      <p id="studyFeedback" class="hint"></p>
+      <p id="studyFeedback" class="hint" role="status"></p>
       <div id="studyEvidence" class="guide-source" hidden>
         <p id="studySavedAnswer"></p>
         <p id="studyQuote"></p>
         <button id="studyJump">Go to source</button>
       </div>
       <div class="actions">
+        <button id="studyRetry" hidden>Retry question</button>
+        <button id="studyOriginal" hidden>Original question</button>
+        <button id="studyFollowUp" hidden>Try follow-up</button>
         <button id="studyReveal">Reveal source</button>
         <button id="studyDraftQuestion">Draft question with Copilot</button>
         <button id="studyAsk">Feedback with Copilot</button>

@@ -20,6 +20,8 @@ not alter the MCP server or any annotations.
 
 The VSIX contains the extension and webview assets. The Python backend runs from the clone. Install later updates from GitHub Releases and update the backend to the matching tag. Copilot is required for AI explanations and feedback. Local reading, Find, and self-checks work offline once set up.
 
+For a VSIX downloaded from a GitHub Actions run, use the backend from the commit shown on that run.
+
 ### Build from source
 
 With Node.js 22 or later, run these commands from the repository root.
@@ -29,7 +31,7 @@ cd vscode-learning
 npm install
 npm test
 npm run package:vsix
-code --install-extension precisionpdf-learning-0.8.2.vsix
+code --install-extension precisionpdf-learning-0.8.3.vsix
 ```
 
 ## Reading a PDF
@@ -42,6 +44,18 @@ code --install-extension precisionpdf-learning-0.8.2.vsix
 - In **Manual tutoring**, choose **Selection only** to send the question and selected text with its document and page labels. The full-context option also sends bounded page text, pins, and recent discussion. **Copy prompt** places source context on the clipboard for use in another chat client.
 - In **Guided Reading**, choose the whole PDF, the current authored outline section, or a page range. The limit is 60 pages per guided run, with additional evidence and request limits. The confirmation reports the selected pages and maximum Copilot requests. Guide judgments use the question and source evidence across subjects.
 
+## Source grounding and comparing passages
+
+**Strict Source** is the default in Manual Tutoring and Guided Reading. It uses the supplied evidence for document claims and reports when the available evidence is insufficient. **Contextual Explanation** allows additional background or examples in a separate **Additional model context** section. This section is model-generated and can be wrong.
+
+In Manual Tutoring, choose the context to send and click **Ask with Copilot**. The confirmation covers up to two requests. The first drafts claims and selects their quotes. The reader resolves those quotes to the original PDF words before the second request. The reviewer checks whether those words support each claim and whether the claim directly helps answer your question. If the reviewer identifies a restriction that conflicts with the claim, it must quote the limiting passage. Click a **PDF page** citation to highlight the reviewed words. Citations from OCR are marked, and the tutor indicates when it withheld a claim or sent only part of a long passage. The reader retains citation targets for its latest 50 answers within the session.
+
+For a general question like “Explain this passage,” the tutor focuses on the selection if there is one and otherwise uses the current page. **Pinned passages only** focuses the answer on your pins. Both explanation modes can show a labeled **Hypothetical example** based on verified claims. If the example cannot be supported, the tutor can still show the explanation. When the tutor cannot verify an answer, it keeps your question in the composer so you can refine it.
+
+In Guided Reading, Copilot assesses the drafted overview alongside its proposed steps and additional retrieved excerpts. Before displaying a guide, the reader checks that the reviewer identified verbatim source words for the question’s subject. Equivalent terms in the source can qualify. An overview also needs explicit support and must link to accepted direct evidence. When the overview fails that check, the guide shows verbatim excerpts or points you to the reviewed passages.
+
+To compare passages, pin text from the pages you want to compare, then select **Pinned passages only**. Ask how the passages relate or whether their claims differ under the same conditions. Each pin has a **Show source** button. This scope sends the pins and your question. The tutor treats prior discussion as context in full-page mode. A tutor or Guided Reading assessment can still miss a contradiction or accept weak reasoning. Exact-word and fingerprint checks verify the cited location. Support assessments are model judgments.
+
 ## Jump to a figure or table
 
 1. Click an underlined reference such as **Figure 3** in the body text. From the keyboard, tab to the reference and press Enter.
@@ -50,15 +64,26 @@ code --install-extension precisionpdf-learning-0.8.2.vsix
 
 Caption lookup relies on selectable text. If a caption is embedded in a scanned page, run **OCR this page** on that page first. Unusual caption formats may require using **Find** or the page number field.
 
+## Compare PDFs
+
+In **Manual tutoring**, choose **Compare PDFs** under **Send to Copilot**, then **Choose PDFs**. Select two to four files from your open workspace and ask a question using terms from the readings. The reader searches their selectable text locally and shows how many excerpts it found for each file. Approving the request sends up to five matching excerpts per PDF and your question to Copilot for drafting and source review. Click a citation to open the referenced PDF and highlight the supporting words. A low match count can mean the readings use different wording or contain scanned pages.
+
+## Explain a figure or equation
+
+Click **Explain figure / equation** and drag a box around the visual. Include its caption if it helps explain the figure. Ask about a specific label, symbol, or relationship in the tutor. After you approve, an image-capable Copilot model receives the selected crop and nearby extracted text. Click the answer’s **Image region** citation to return to the original box.
+
 ## Listen in Guided Reading
 
 Open a guided explanation and click **Read aloud** below it. Kokoro uses the speed selected in the PDF toolbar. The supporting passage stays highlighted while the explanation plays. Automatic advancement pauses when narration starts. Switching passages stops narration. Use **Listen** in the PDF toolbar to hear the source text itself. [Kokoro setup](../experiments/KOKORO_VOICE_PROBE.md)
+
+For a section recap, run **Guided Reading** on the current outline section or a page range, then click **Listen to recap**. The reader narrates up to three reviewed explanations and highlights each source as it plays. At the end, answer the guide’s question in your own words, then click **Show evidence** to check your answer against the PDF. The recap reuses the guide and local Kokoro audio.
 
 ## Practice while reading
 
 - **Check understanding** opens a short-answer exercise for the selected text or current page. You can also start one from a highlighted Guided Reading step. Try your answer, then **Reveal source** to check it or **Go to source** to inspect the original PDF. **Resume check** returns to the exercise after a jump.
 - **Save for review** keeps your question, answer, and source in local VS Code workspace state. **Review questions** lists the current PDF’s saved questions. **Again** schedules another attempt in ten minutes, and **Got it** increases the interval across successful reviews.
-- Local prompts work offline. You can also ask Copilot to draft a question or give feedback on your answer. Each of those actions confirms which text will be sent before making a model request.
+- Open **Review questions** to see what is due and continue with **Review next due**. Each saved question distinguishes written attempts, source reveals, completed reviews, and **Again** / **Got it** self-ratings. Repeated **Again** ratings identify questions worth revisiting. These counts describe study activity and self-assessment.
+- Local prompts, source reveals, and retries work offline. Copilot can draft a question or assess your answer against the passage, adapting a follow-up to the gap it identifies. After feedback, try the follow-up, retry the current question, or return to the original. Feedback sends your current attempt and, if available, the previous attempt for comparison. The confirmation covers up to two requests for feedback and its support assessment.
 - Select a term or acronym and choose **Find definition** to search the PDF for likely definitions and expansions. Click a result to jump to its source.
 - Choose **Listen** to hear the current page or selection with the optional English Kokoro voice. **Follow audio** highlights each passage as it plays. Choose 0.8×, 1×, or 1.2× before starting playback. [Kokoro setup](../experiments/KOKORO_VOICE_PROBE.md)
 
@@ -70,7 +95,7 @@ The reader uses the configured Python environment in offline, no-sync mode. Run 
 - **The Python reader fails after an update.** Update the backend clone to the revision matching the VSIX, run `uv sync` there, and check both PrecisionPDF settings in VS Code User settings.
 - **Find or the tutor has no text.** For an image-only page, run **OCR this page**. Search reports pages without selectable text, and OCR results are reused for the current reader session.
 - **Copilot is unavailable.** Check that VS Code has access to a Copilot model. You can use **Copy prompt** to take the current source context into another chat client. Reading, local search, and self-checks work offline.
-- **A saved question’s source will not highlight.** The reader verifies the PDF fingerprint and original words. You can still review the stored quotation and answer if the PDF changed.
+- **A saved question’s source will not highlight.** The reader checks the PDF fingerprint and original words. You can still review the stored quotation and answer if the PDF changed. Create a new check from the updated PDF to get Copilot feedback on that source.
 
 ## Fedora development setup
 
@@ -87,14 +112,19 @@ Run `uv run pytest -q` from the repository root and
 A manual VS Code Extension Development Host test is still required for the
 webview, word selection, and actual Copilot access.
 
+The [accuracy benchmark](test/accuracy/README.md) provides 37 synthetic questions
+with expected answers and supporting PDF evidence. Run the local evidence
+check before comparing live Copilot answers.
+
 ## Scope and privacy
 
 - Learning Mode reads PDFs within the workspace and shows temporary highlights. Use the MCP tools for persistent annotations.
-- Find, rendering, OCR, saved review questions, and Kokoro run locally. **Ask with Copilot** sends the context chosen in the composer. Guided analysis, question drafting, and feedback ask for confirmation before sending source text. Feedback also sends your answer.
+- Find, rendering, OCR, saved review questions, and Kokoro run locally. Manual tutoring sends the context chosen in the composer after confirmation. Guided analysis, question drafting, and feedback also ask for confirmation before sending source text. Feedback includes your answer and any previous attempt supplied by the exercise.
 - Password-protected PDFs are unsupported. Complex layouts can still affect recognized reading order.
 
 ## Release history
 
+- **v0.8.3** adds Strict Source explanations with clickable evidence, cross-PDF comparison, figure and equation explanations, guided audio recaps, and more detailed practice and review.
 - **v0.8.2** adds local figure and table navigation with return-to-position.
 - **v0.8.1** adds offline Read Aloud to Guided Reading explanations.
 - **v0.8.0** adds follow-along PDF narration, understanding checks, saved review questions, and in-document definition lookup.
@@ -302,15 +332,12 @@ shorter; inspect actual source passages before trusting the labels.
 
 ## Clearer direct explanations and evidence-grounded overviews (v0.6.2)
 
-The existing Copilot relevance-review request now optionally returns a
-coherent, brief `directOverview` and the IDs of ALL accepted direct passages
-used to write it. The extension only uses that overview if every listed ID
-corresponds exactly to a passage that survived the review as direct evidence.
-Otherwise it displays short **verbatim source excerpts with page numbers**
-instead of joining repeated “this excerpt…” model descriptions. This checks
-provenance and source linkage, **not semantic correctness**; inspect the
-quoted evidence before accepting an interpretation. No extra Copilot request
-is introduced.
+Copilot assesses the drafted overview during the existing relevance review.
+The extension displays the assessed draft when the review endorses it and
+its evidence IDs match the direct passages. The fallback uses
+**verbatim source excerpts with page numbers** when those excerpts fit,
+or points you to the reviewed passages. Inspect the quoted evidence to
+confirm the model’s interpretation.
 
 The direct-versus-contextual boundary is stricter for *black-box* questions.
 Saying a neural network is merely *unreliable* or *unpredictable* does not by

@@ -8,6 +8,22 @@ import re
 import sys
 
 MAX_TEXT = 3500
+RELATIONS = {
+    "<=": "less than or equal to", ">=": "greater than or equal to",
+    "≤": "less than or equal to", "≥": "greater than or equal to",
+    "<": "less than", ">": "greater than", "≠": "does not equal", "=": "equals",
+    "−": "minus", "±": "plus or minus",
+}
+
+
+def spoken_text(text):
+    # Expand notation after segmenting so audio spans still count PDF words.
+    text = re.sub(r"<=|>=|[<>≤≥≠=−±]", lambda match: f" {RELATIONS[match[0]]} ", text)
+    text = re.sub(r"(?<![\w-])-(?=\d|\s)", " minus ", text)
+    text = re.sub(r"(?<=\d)\s*[µμ]g\b", " micrograms", text)
+    text = re.sub(r"(?<=\d)\s*°C\b", " degrees Celsius", text)
+    text = re.sub(r"(?<=\d)\s*%", " percent", text)
+    return " ".join(text.split())
 
 
 def segments(text, limit=230):
@@ -62,7 +78,7 @@ def main():
             raise ValueError("Voice af_heart is not installed")
         offset = 0
         for sentence in segments(text, limit=160 if follow else 230):
-            samples, rate = kokoro.create(sentence, voice="af_heart",
+            samples, rate = kokoro.create(spoken_text(sentence), voice="af_heart",
                                           speed=speed, lang="en-us")
             if len(samples) == 0:
                 raise RuntimeError("Kokoro returned no audio")

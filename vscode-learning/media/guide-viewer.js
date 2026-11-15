@@ -101,7 +101,7 @@ function setupGuidedUI({ host, el, overlay, highlight, scope = () => ({}), remem
     el("guideStart").disabled = true;
     el("guideCancel").hidden = false;
     remember();
-    host.postMessage({ type: "guideStart", question, approach: el("guideApproach").value, ...scope() });
+    host.postMessage({ type: "guideStart", question, approach: el("guideApproach").value, grounding: el("guideGrounding").value, ...scope() });
   });
   el("guideRelated").addEventListener("click", () => {
     const question = el("guideQuestion").value.trim();
@@ -110,7 +110,7 @@ function setupGuidedUI({ host, el, overlay, highlight, scope = () => ({}), remem
     el("guideStart").disabled = true;
     el("guideCancel").hidden = false;
     remember();
-    host.postMessage({ type: "guideRelated", question, ...scope() });
+    host.postMessage({ type: "guideRelated", question, grounding: el("guideGrounding").value, ...scope() });
   });
   el("guideCancel").addEventListener("click", () => {
     host.postMessage({ type: "guideCancel" });
@@ -185,6 +185,8 @@ function setupGuidedUI({ host, el, overlay, highlight, scope = () => ({}), remem
       // The first confirmed activation determines where Next can navigate.
       el("guideNext").disabled = true;
       el("guideOverview").textContent = guide.plan.overview;
+      el("guideContext").hidden = !guide.plan.additionalContext;
+      el("guideContextText").textContent = guide.plan.additionalContext || "";
       el("guideResults").hidden = false;
       el("guideActive").hidden = true;
       const directList = document.createDocumentFragment();

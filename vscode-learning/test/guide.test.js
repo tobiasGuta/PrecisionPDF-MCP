@@ -25,20 +25,27 @@ function modelSequence(...objects) {
     sendModel: async prompt => {
       prompts.push(prompt);
       if (calls >= objects.length) throw new Error("unexpected extra model request");
-      return JSON.stringify(objects[calls++]);
+      const response = objects[calls++];
+      // Most fixtures test step decisions after a successful subject check.
+      if (Array.isArray(response.reviews) && !Object.hasOwn(response, "subjectEvidence")) {
+        const input = JSON.parse(prompt.split("<review-data>\n")[1].split("\n</review-data>")[0]);
+        const { evidenceId, quote } = input.steps[0];
+        return JSON.stringify({ ...response, subjectEvidence: { evidenceId, quote } });
+      }
+      return JSON.stringify(response);
     } };
 }
 function standardSequence() {
   return modelSequence(
     { findings: [finding("p1-w0","direct","opacity"), finding("p2-w0","broader","governance")] },
-    { overview:"Raw summary should not automatically include broader material.",
+    { overview:"Neural networks are difficult to interpret because their behavior can be opaque.",
       steps: [step("p1-w0","direct","Neural networks are difficult to interpret."),
         step("p2-w0","broader","Companies face accountability questions.")] },
     { reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"Specifically discusses opacity."},
       {evidenceId:"p2-w0",decision:"broader",reason:"Accountability is a downstream concern of opacity.",
         bridgeQuote:"Opacity raises important accountability concerns.",
         link:"Opacity and model interpretability create accountability concerns in deployments."}],
-      directOverview:"Neural networks are difficult to interpret because their behavior can be opaque.",
+      overviewSupported:true,
       overviewEvidenceIds:["p1-w0"] }
   );
 }
@@ -147,6 +154,28 @@ test("review rejection of all steps doesn't create an unsupported tour", async (
   );
   await assert.rejects(generateGuide({index:fakeIndex(),question:"Why?",sendModel:model.sendModel}),/review rejected all/);
 });
+
+test("a generic study limitation cannot establish an absent topic despite a positive review", async () => {
+  const index = fakeIndex();
+  index.excerpts[0].text = "The report did not track long-term changes.";
+  index.excerpts[0].section = "";
+  const question = "What does the report say about coastal erosion?";
+  for (const subjectEvidence of [
+    null,
+    { evidenceId: "p1-w0", quote: "coastal erosion" },
+    { evidenceId: "p2-w0", quote: index.excerpts[1].text }
+  ]) {
+    const model = modelSequence(
+      { findings: [finding("p1-w0", "direct")] },
+      { overview: "The coastal erosion findings were preliminary.",
+        steps: [step("p1-w0", "direct", "The report did not track long-term coastal erosion.")] },
+      { subjectEvidence, reviews: [{ evidenceId: "p1-w0", decision: "direct", reason: "The report notes a limitation." }],
+        overviewSupported: true, overviewEvidenceIds: ["p1-w0"] }
+    );
+    await assert.rejects(generateGuide({ index, question, ...model }), /No sufficiently relevant source references/);
+    assert.match(model.prompts[2], /Equivalent terminology is valid/);
+  }
+});
 test("invented candidate and synthesis IDs are never highlighted", async () => {
   const noCandidates=modelSequence({findings:[finding("p404-w0","direct")]});
   await assert.rejects(generateGuide({index:fakeIndex(),question:"Why?",sendModel:noCandidates.sendModel}),/No sufficiently relevant/);
@@ -187,7 +216,8 @@ test("domain-specific evidence can answer an ambiguous question without repeatin
   const model = modelSequence(
     { findings: [finding("p1-w0", "direct")] },
     { steps: [step("p1-w0", "direct")] },
-    { reviews: [{ evidenceId: "p1-w0", decision: "direct", reason: "Identifies the evidence preserved for investigators." }] }
+    { subjectEvidence: { evidenceId: "p1-w0", quote: "flight data recorder" },
+      reviews: [{ evidenceId: "p1-w0", decision: "direct", reason: "Identifies the evidence preserved for investigators." }] }
   );
   const result = await generateGuide({ index,
     question: "How does an aircraft black box help an accident investigation?",
@@ -260,6 +290,7 @@ test("review overview reads naturally and cites only accepted direct evidence", 
   assert.doesNotMatch(guide.overview,/This excerpt|accountability/i);
   assert.equal(model.calls,3);
   assert.match(model.prompts[2],/overviewEvidenceIds/);
+  assert.ok(model.prompts[2].includes(guide.overview));
 });
 
 test("overview citing rejected or contextual passage falls back to direct source text", async () => {
@@ -268,7 +299,7 @@ test("overview citing rejected or contextual passage falls back to direct source
     {overview:"Draft contains irrelevant material.",steps:[step("p1-w0","direct"),step("p2-w0","broader")]},
     {reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"Defines opacity."},
       {evidenceId:"p2-w0",decision:"reject",reason:"Not directly relevant."}],
-      directOverview:"Water consumption and corporate accountability are the main black-box issues.",
+      overviewSupported:true,
       overviewEvidenceIds:["p2-w0"]}
   );
   const guide=await generateGuide({index:fakeIndex(),question:"black box",sendModel:model.sendModel});
@@ -283,10 +314,10 @@ test("a reviewer rejection removes evidence and invalidates an overview that ref
   index.excerpts[1].text="Neural networks can be unreliable and unpredictable.";
   const model=modelSequence(
     {findings:[finding("p1-w0","direct"),finding("p2-w0","direct")]},
-    {overview:"",steps:[step("p1-w0","direct"),step("p2-w0","direct")]},
+    {overview:"The model is opaque and unpredictable.",steps:[step("p1-w0","direct"),step("p2-w0","direct")]},
     {reviews:[{evidenceId:"p1-w0",decision:"direct",reason:"Opaque networks are hard to explain."},
       {evidenceId:"p2-w0",decision:"reject",reason:"Unpredictability has indirect relevance."}],
-      directOverview:"The model is opaque and unpredictable.", overviewEvidenceIds:["p1-w0","p2-w0"]}
+      overviewSupported:true, overviewEvidenceIds:["p1-w0","p2-w0"]}
   );
   const guide=await generateGuide({index,question:"Why are neural nets black boxes?",sendModel:model.sendModel});
   assert.equal(guide.directCount,1);
@@ -312,4 +343,53 @@ test("reviewer can downgrade a direct claim to qualified context", async () => {
   assert.equal(guide.broaderCount,1);
   assert.match(guide.steps[1].explanation,/^Related context:/);
   assert.equal(guide.steps[1].relevance,"broader");
+});
+
+test("a candidate sees only IDs in its own evidence batch", async () => {
+  const index = fakeIndex();
+  index.excerpts[0].text = "Cultivation " + "plot ".repeat(1700);
+  index.excerpts[1].text = "Treaty " + "article ".repeat(1100);
+  assert.equal(prepareBatches(index).length, 2);
+  const model = modelSequence({ findings: [finding("p2-w0", "direct")] }, { findings: [] });
+  await assert.rejects(generateGuide({ index, question: "What does the document establish?", ...model }), /No sufficiently relevant/);
+  assert.equal(model.calls, 2);
+});
+
+test("Guided Reading only returns outside context in contextual mode", async () => {
+  for (const [mode, contextAccepted] of [["strict", true], ["contextual", true], ["contextual", false]]) {
+    const model = modelSequence({ findings: [finding("p1-w0", "direct")] },
+      { steps: [step("p1-w0", "direct")], additionalContext: "Illustrative analogy." },
+      { reviews: [{ evidenceId: "p1-w0", decision: "direct", reason: "Supported." }],
+        contextAccepted, additionalContext: "Unreviewed replacement." });
+    const guide = await generateGuide({ index: fakeIndex(), question: "Explain.", mode, ...model });
+    assert.equal(guide.additionalContext, mode === "contextual" && contextAccepted ? "Illustrative analogy." : "");
+  }
+});
+
+test("the reviewer sees a retrieved exception even if synthesis leaves it out", async () => {
+  const index = fakeIndex();
+  index.excerpts[0].text = "The treated plots grew faster in the initial trial.";
+  index.excerpts[1].text = "A follow-up trial found no difference in shaded plots.";
+  const overview = "Treated plots consistently grow faster under all conditions.";
+  const model = modelSequence(
+    { findings: [finding("p1-w0", "direct"), finding("p2-w0", "direct")] },
+    { overview, steps: [step("p1-w0", "direct", index.excerpts[0].text)] },
+    { reviews: [{ evidenceId: "p1-w0", decision: "direct", reason: "The step describes the initial trial." }],
+      overviewSupported: false, overviewEvidenceIds: ["p1-w0"],
+      directOverview: "An unassessed replacement summary." }
+  );
+  const guide = await generateGuide({ index, question: "How did treatment affect growth?", ...model });
+  assert.ok(model.prompts[2].includes(index.excerpts[1].text));
+  assert.equal(guide.overviewSource, "source-excerpts");
+  assert.ok(guide.overview.includes(index.excerpts[0].text));
+  assert.doesNotMatch(guide.overview, /all conditions|replacement/);
+});
+
+test("conflicting assessments for the same guide passage withhold the passage", async () => {
+  const model = modelSequence({ findings: [finding("p1-w0", "direct")] },
+    { steps: [step("p1-w0", "direct")] }, { reviews: [
+      { evidenceId: "p1-w0", decision: "direct", reason: "Supported." },
+      { evidenceId: "p1-w0", decision: "reject", reason: "The claim contradicts the passage." }
+    ] });
+  await assert.rejects(generateGuide({ index: fakeIndex(), question: "Explain.", ...model }), /review rejected all/);
 });

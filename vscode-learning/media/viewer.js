@@ -6,10 +6,10 @@ const stage = el("stage");
 const overlay = el("overlay");
 const reader = stage.parentElement;
 const guidedUI = globalThis.setupPrecisionPDFGuided({ host, el, overlay, highlight, scope: guideScope, remember,
-  stopNarration: () => speechUI.stopTurn("guide") });
+  stopNarration: () => { speechUI.stopTurn("guide"); speechUI.stopTurn("recap"); } });
 const findUI = globalThis.setupPrecisionPDFFind({ host, el, highlight, remember,
   clear: () => clearHighlight("found") });
-const speechUI = globalThis.setupPrecisionPDFSpeech({ host, onSpan: followSpeech });
+const speechUI = globalThis.setupPrecisionPDFSpeech({ host, onSpan: followSpeech, continuePlayback: continueRecap });
 const studyUI = globalThis.setupPrecisionPDFStudy({ host, el, remember, highlight,
   selected: () => ({ ...requestSource(), quote: selectionText() }),
   pause: () => { guidedUI.pause(); speechUI.stop(); } });
@@ -31,6 +31,11 @@ let turnFailed = false;
 let positionTimer;
 let referencePending = false;
 let referenceOrigin = null;
+let selectingRegion = false;
+let regionStart = null;
+let region = null;
+let recap = null;
+let recapIndex = 0;
 
 function requestSource() {
   return { page: page?.page, fingerprint: page?.sha256,
@@ -122,6 +127,8 @@ function setControls() {
   el("clear").disabled = !selected;
   el("newThread").disabled = answering || !el("thread").children.length;
   el("zoom").disabled = loading || answering;
+  el("visualSelect").disabled = loading || answering;
+  el("comparisonChoose").disabled = answering;
   el("ocr").disabled = loading || answering;
   el("pin").disabled = !selected;
   speechUI.setAvailable(0, !loading && Boolean(page?.words.length));
@@ -135,6 +142,107 @@ function setControls() {
   el("prev").disabled = loading || answering || !page || page.page <= 1;
   el("next").disabled = loading || answering || !page || page.page >= page.pages;
 }
+
+function selectScope() {
+  const scope = el("tutorScope").value;
+  el("comparisonControls").hidden = scope !== "comparison";
+  el("tutorGrounding").disabled = scope === "visual";
+  el("copy").disabled = scope === "visual" || scope === "comparison";
+}
+el("tutorScope").addEventListener("change", selectScope);
+el("comparisonChoose").addEventListener("click", () => host.postMessage({ type: "comparisonChoose" }));
+
+function setRegionMode(active) {
+  selectingRegion = active;
+  regionStart = null;
+  overlay.classList.toggle("select-region", active);
+  el("visualSelect").setAttribute("aria-pressed", String(active));
+  if (active) el("notice").textContent = "Drag a box around a figure, chart, or equation. Include its caption if helpful.";
+}
+
+function showRegion(box) {
+  const node = el("visualBox");
+  node.hidden = !box;
+  if (!box) return;
+  const [x0, y0, x1, y1] = box;
+  Object.assign(node.style, { left: x0 * 100 + "%", top: y0 * 100 + "%",
+    width: (x1 - x0) * 100 + "%", height: (y1 - y0) * 100 + "%" });
+}
+
+function regionPoint(event) {
+  const rect = overlay.getBoundingClientRect();
+  const clip = value => Math.min(1, Math.max(0, value));
+  return [clip((event.clientX - rect.left) / rect.width), clip((event.clientY - rect.top) / rect.height)];
+}
+
+function dragRegion(event) {
+  const [x, y] = regionPoint(event);
+  const [left, top] = regionStart;
+  return [Math.min(left, x), Math.min(top, y), Math.max(left, x), Math.max(top, y)];
+}
+
+el("visualSelect").addEventListener("click", () => {
+  setRegionMode(!selectingRegion);
+  if (!selectingRegion) showRegion(region);
+});
+overlay.addEventListener("pointermove", event => { if (regionStart) showRegion(dragRegion(event)); });
+overlay.addEventListener("pointercancel", () => { setRegionMode(false); showRegion(region); });
+
+function sendRecap() {
+  return { type: "recapStep", id: recap?.id, number: recapIndex, zoom, speed: Number(el("listenSpeed").value) };
+}
+
+function continueRecap(id) {
+  if (id !== "recap" || !recap) return false;
+  if (++recapIndex < recap.steps.length) {
+    host.postMessage(sendRecap());
+    return true;
+  }
+  el("recapRecall").hidden = false;
+  el("recapAnswer").focus();
+  return false;
+}
+
+function setRecap(plan) {
+  speechUI.stopTurn("recap");
+  recap = plan?.recapId && plan.directCount
+    ? { id: plan.recapId, question: plan.question, steps: plan.steps.slice(0, Math.min(3, plan.directCount)) } : null;
+  el("recap").hidden = !recap;
+  el("recapRecall").hidden = true;
+  el("recapEvidence").hidden = true;
+  el("recapEvidence").replaceChildren();
+  el("recapAnswer").value = "";
+  el("recapQuestion").textContent = recap?.question || "";
+}
+
+el("recapSpeech").appendChild(speechUI.createControls("recap", () => {
+  guidedUI.pause();
+  remember();
+  recapIndex = 0;
+  el("recapRecall").hidden = true;
+  el("recapEvidence").hidden = true;
+  return sendRecap();
+}, "Listen to recap"));
+speechUI.complete("recap", true);
+el("recapReveal").addEventListener("click", () => {
+  if (!recap) return;
+  const entries = recap.steps.map((step, number) => {
+    const entry = document.createElement("p");
+    const source = document.createElement("button");
+    source.textContent = "PDF page " + step.page;
+    source.addEventListener("click", () => {
+      if (!loading && !answering) {
+        remember();
+        host.postMessage({ type: "guideGoto", number, zoom });
+      }
+    });
+    entry.textContent = step.quote + " ";
+    entry.append(source);
+    return entry;
+  });
+  el("recapEvidence").replaceChildren(...entries);
+  el("recapEvidence").hidden = false;
+});
 
 el("selectionSpeech").appendChild(speechUI.createControls(0, () => {
   guidedUI.pause();
@@ -204,6 +312,14 @@ function render(data, restore) {
   const left = restoreScroll?.left || 0;
   const image = el("pageImage");
   page = data;
+  region = null;
+  showRegion(null);
+  setRegionMode(false);
+  el("visualScope").disabled = true;
+  if (el("tutorScope").value === "visual") {
+    el("tutorScope").value = "page";
+    selectScope();
+  }
   if (!referencePending) { referenceOrigin = null; closeReferenceResults(); }
   loading = false;
   setZoom(restoreScroll?.zoom ?? zoom);
@@ -281,6 +397,12 @@ function render(data, restore) {
 }
 
 overlay.addEventListener("pointerdown", (event) => {
+  if (selectingRegion && !loading && event.button === 0) {
+    event.preventDefault();
+    overlay.setPointerCapture(event.pointerId);
+    regionStart = regionPoint(event);
+    return;
+  }
   const word = event.target.closest(".word");
   if (loading || !word || event.button !== 0) return;
   event.preventDefault();
@@ -330,6 +452,26 @@ overlay.addEventListener("keydown", event => {
 });
 
 window.addEventListener("pointerup", event => {
+  if (regionStart) {
+    const box = dragRegion(event);
+    setRegionMode(false);
+    if (box[2] - box[0] < .005 || box[3] - box[1] < .005) {
+      showRegion(region);
+      el("notice").textContent = "Select a larger area using Explain figure / equation.";
+      return;
+    }
+    region = box;
+    showRegion(region);
+    if (el("tutorPane").hidden) el("assistantToggle").click();
+    guidedUI.setMode("manual");
+    el("visualScope").disabled = false;
+    el("tutorScope").value = "visual";
+    selectScope();
+    el("notice").textContent = "Image region selected.";
+    el("question").value = "";
+    el("question").focus();
+    return;
+  }
   if (!dragging) return;
   dragging = false;
   const word = event.target?.closest?.(".word");
@@ -431,7 +573,9 @@ function beginTurn(message) {
   evidence.className = "turn-source";
   evidence.textContent = message.passage ?
     "Passage: “" + message.passage.slice(0, 160) + (message.passage.length > 160 ? "…" : "") + "”" :
-    "Using page context";
+    message.scope === "pins" ? "Using pinned passages" :
+      message.scope === "comparison" ? "Comparing selected PDFs" :
+        message.scope === "visual" ? "Using selected image region" : "Using page context";
   const answerLabel = document.createElement("div");
   answerLabel.className = "turn-label tutor-label";
   answerLabel.textContent = "Copilot";
@@ -484,7 +628,9 @@ el("ask").addEventListener("click", () => {
   el("question").readOnly = true;
   el("stopAsk").hidden = false;
   setControls();
-  host.postMessage({ type: "ask", ...requestSource(), scope: el("tutorScope").value, question });
+  const scope = el("tutorScope").value;
+  host.postMessage({ type: "ask", ...requestSource(), scope, grounding: el("tutorGrounding").value, question,
+    ...(scope === "visual" ? { box: region } : {}) });
 });
 el("question").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -494,7 +640,7 @@ el("question").addEventListener("keydown", (event) => {
 });
 el("copy").addEventListener("click", () => {
   if (!page || loading || answering) return;
-  host.postMessage({ type: "copy", ...requestSource(), scope: el("tutorScope").value,
+  host.postMessage({ type: "copy", ...requestSource(), scope: el("tutorScope").value, grounding: el("tutorGrounding").value,
     question: el("question").value });
 });
 
@@ -512,6 +658,19 @@ function finishTurn(success) {
 window.addEventListener("message", (event) => {
   const message = event.data;
   if (!message || typeof message !== "object") return;
+  if (message.type === "guide-plan") setRecap(message.plan);
+  if (["guide-clear", "guide-error", "reader-text-changed"].includes(message.type)) setRecap(null);
+  if (message.type === "recap-source") { highlight(message, "guided"); return; }
+  if (message.type === "comparison-list") {
+    el("comparisonList").textContent = message.labels.join(" · ");
+    return;
+  }
+  if (message.type === "tutor-status") { el("threadStatus").textContent = message.message; return; }
+  if (message.type === "region-source" && page?.sha256 === message.fingerprint && page.page === message.page) {
+    showRegion(message.box);
+    el("visualBox").scrollIntoView({ block: "center", inline: "nearest" });
+    return;
+  }
   if (speechUI.onMessage(message) || studyUI.onMessage(message)) return;
   if (message.type === "reference-progress") {
     el("referenceStatus").textContent = message.message;
@@ -572,7 +731,7 @@ window.addEventListener("message", (event) => {
   if (guidedUI.onMessage(message)) return;
   if (findUI.onMessage(message)) return;
   if (message.type === "loading") {
-    speechUI.stop();
+    if (!message.recap) speechUI.stop();
     el("notice").textContent = "Loading page…";
     loading = true;
     setControls();
@@ -593,9 +752,69 @@ window.addEventListener("message", (event) => {
       const remove = document.createElement("button");
       remove.textContent = "Remove pin";
       remove.addEventListener("click", () => host.postMessage({ type: "unpin", number }));
-      card.appendChild(remove);
+      const go = document.createElement("button");
+      go.textContent = "Show source";
+      go.addEventListener("click", () => {
+        if (loading || answering) return;
+        remember();
+        host.postMessage({ type: "pinGoto", number, zoom });
+      });
+      card.append(go, remove);
       return card;
     }));
+  } else if (message.type === "evidence-source") {
+    highlight(message, "found");
+  } else if (message.type === "tutor-reviewing") {
+    if (activeAnswer) activeAnswer.textContent = "Checking which claims the supplied passages support…";
+  } else if (message.type === "tutor-answer") {
+    if (!activeAnswer) return;
+    answerText = message.text;
+    activeAnswer.replaceChildren();
+    if (message.notice) {
+      const note = document.createElement("p");
+      note.textContent = message.notice;
+      activeAnswer.appendChild(note);
+    }
+    for (const claim of message.claims) {
+      const paragraph = document.createElement("p");
+      paragraph.textContent = claim.text + " ";
+      for (const source of claim.sources) {
+        const button = document.createElement("button");
+        button.textContent = (source.document ? source.document + " · " : "") +
+          "PDF page " + source.page + (source.region ? " · Image region" : source.ocr ? " · OCR" : "");
+        if (source.quote) button.title = source.quote;
+        button.addEventListener("click", () => {
+          if (loading || answering) return;
+          remember();
+          host.postMessage({ type: "tutorSource", turnId: message.turnId, id: source.id, zoom });
+        });
+        paragraph.appendChild(button);
+      }
+      activeAnswer.appendChild(paragraph);
+    }
+    if (message.coverage?.length) {
+      const coverage = document.createElement("p");
+      coverage.className = "hint";
+      coverage.textContent = "Local retrieval · " + message.coverage.join(" · ");
+      activeAnswer.appendChild(coverage);
+    }
+    if (message.limited || message.truncated) {
+      const note = document.createElement("p");
+      note.className = "hint";
+      note.textContent = [
+        message.limited ? "Some drafted claims lacked sufficient support and were omitted." : "",
+        message.truncated ? "Some source text was shortened before review." : ""
+      ].filter(Boolean).join(" ");
+      activeAnswer.appendChild(note);
+    }
+    for (const [label, text] of [["Hypothetical example", message.example], ["Additional model context", message.context]]) {
+      if (!text) continue;
+      const heading = document.createElement("h3");
+      heading.textContent = label;
+      const paragraph = document.createElement("p");
+      paragraph.textContent = text;
+      activeAnswer.append(heading, paragraph);
+    }
   } else if (message.type === "reader-notice") {
     el("notice").textContent = message.message;
   } else if (message.type === "thread-reset") {

@@ -78,6 +78,28 @@ def read_learning_page(root: str, filename: str, number: int, ocr_language=None,
             "png_base64": base64.b64encode(preview).decode("ascii"),
         }
 
+def read_learning_region(root, filename, number, region):
+    workspace = PDFWorkspace(root)
+    path = workspace.path(filename)
+    fingerprint = file_sha256(path)
+    x0, y0, x1, y1 = region
+    if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
+        raise AnnotationError("Select a region inside the PDF page")
+    with pymupdf.open(path) as document:
+        if document.needs_pass:
+            raise AnnotationError("Encrypted PDFs are not supported in Learning Mode")
+        workspace._check_page(document, number)
+        page = document[number - 1]
+        width, height = page.rect.width, page.rect.height
+        clip = pymupdf.Rect(x0 * width, y0 * height, x1 * width, y1 * height)
+        if min(clip.width, clip.height) < 2:
+            raise AnnotationError("Select a larger region")
+        scale = min(3, 1600 / max(clip.width, clip.height))
+        preview = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), clip=clip, alpha=False).tobytes("png")
+        if file_sha256(path) != fingerprint:
+            raise AnnotationError("PDF changed while rendering the region")
+    return {"sha256": fingerprint, "png_base64": base64.b64encode(preview).decode("ascii")}
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Read-only PrecisionPDF Learning Mode page")
@@ -88,11 +110,15 @@ def main() -> int:
     parser.add_argument("--zoom", type=float, default=1.5)
     parser.add_argument("--outline", action="store_true")
     parser.add_argument("--cached-ocr", action="store_true")
+    parser.add_argument("--region", nargs=4, type=float)
     args = parser.parse_args()
     try:
         cached = json.load(sys.stdin) if args.cached_ocr else None
-        data = read_learning_page(args.root, args.file, args.page, args.ocr_language,
-                                  args.zoom, outline=args.outline, cached=cached)
+        if args.region is not None:
+            data = read_learning_region(args.root, args.file, args.page, args.region)
+        else:
+            data = read_learning_page(args.root, args.file, args.page, args.ocr_language,
+                                      args.zoom, outline=args.outline, cached=cached)
         json.dump(data, sys.stdout)
         sys.stdout.write("\n")
         return 0

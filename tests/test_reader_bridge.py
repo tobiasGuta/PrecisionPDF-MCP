@@ -6,7 +6,7 @@ import pymupdf
 import pytest
 
 from precisionpdf_mcp.core import AnnotationError
-from precisionpdf_mcp.reader_bridge import read_learning_page
+from precisionpdf_mcp.reader_bridge import read_learning_page, read_learning_region
 
 
 @pytest.fixture
@@ -80,3 +80,23 @@ def test_reader_returns_internal_links_and_ignores_external_actions(tmp_path):
     assert rendered["word_lines"] == [[0, 0], [0, 0]]
     x0, y0, x1, y1, _ = rendered["words"][0]
     assert pymupdf.Point((x0 + x1) / 2, (y0 + y1) / 2) in pymupdf.Rect(link["from"])
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_visual_region_contains_only_the_selected_display_area(tmp_path, rotation):
+    filename = "region.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=200, height=100)
+        page.draw_rect(pymupdf.Rect(20, 20, 60, 60), fill=(1, 0, 0), color=None)
+        page.draw_rect(pymupdf.Rect(90, 20, 130, 60), fill=(0, 0, 1), color=None)
+        page.set_rotation(rotation)
+        target = pymupdf.Rect(25, 25, 55, 55) * page.rotation_matrix
+        region = (target.x0 / page.rect.width, target.y0 / page.rect.height,
+                  target.x1 / page.rect.width, target.y1 / page.rect.height)
+        doc.save(tmp_path / filename)
+    result = read_learning_region(str(tmp_path), filename, 1, region)
+    pixmap = pymupdf.Pixmap(base64.b64decode(result["png_base64"]))
+    assert pixmap.pixel(pixmap.width // 2, pixmap.height // 2) == (255, 0, 0)
+    assert pixmap.width <= 91 and pixmap.height <= 91
+    with pytest.raises(AnnotationError, match="inside"):
+        read_learning_region(str(tmp_path), filename, 1, (0, 0, 1.1, 1))

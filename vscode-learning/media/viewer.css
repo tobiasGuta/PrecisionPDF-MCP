@@ -71,6 +71,10 @@ main.reading-only { grid-template-columns: minmax(0, 1fr); }
 #stage.zoomed { margin-inline: 0; }
 #pageImage { display: block; width: 100%; height: auto; pointer-events: none; }
 #overlay { position: absolute; inset: 0; }
+#overlay.select-region { cursor: crosshair; touch-action: none; }
+#overlay.select-region .word { cursor: crosshair; }
+#visualBox { position: absolute; pointer-events: none; outline: 2px solid var(--vscode-focusBorder); background: var(--vscode-editor-selectionBackground); }
+#recapEvidence button { margin-inline-start: 0.4rem; }
 .word { position: absolute; border-radius: 2px; cursor: text; }
 .word:hover { background: #4b91ff38; }
 .word.selected { background: #3c8cff61; outline: 1px solid #2062e371; }
