@@ -315,8 +315,9 @@ async function openLearningMode(context, uri, citation) {
       const history = scope === "page" ? session.history() : "";
       const payload = isVisual ? "the selected PDF image region and nearby text"
         : sources.length + " PDF excerpt(s)" + (history ? " and recent discussion" : "");
+      const requestLimit = isVisual ? "two requests" : "three requests, including one retry for an unreadable reply";
       const agreed = await vscode.window.showWarningMessage(
-        "Send " + payload + " to GitHub Copilot for an answer and support assessment (up to two requests)?" +
+        "Send " + payload + " to GitHub Copilot for an answer and support assessment (up to " + requestLimit + ")?" +
         (evidence ? "\n\n" + evidence.coverage.join("\n") : ""),
         { modal: true }, "Ask Copilot");
       if (agreed !== "Ask Copilot" || disposed || signal.aborted) return send({ type: "tutor-rejected", message: "Question cancelled." });

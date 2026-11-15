@@ -7,15 +7,15 @@ function edgeWord(word, index, length) {
 }
 
 // Undefined means no match. Null means more than one occurrence.
-function quoteOffset(words, needle, normalizeEdges = false) {
+function quoteOffset(words, needle, normalizeEdges = false, matchWord = () => false) {
   let offset;
   for (let i = 0; i <= words.length - needle.length; i++) {
     const match = needle.every((word, j) => {
       const original = words[i + j];
       if (word === original) return true;
-      if (!normalizeEdges) return false;
-      const normalized = edgeWord(word, j, needle.length);
-      return Boolean(normalized) && normalized === edgeWord(original, j, needle.length);
+      const expected = normalizeEdges ? edgeWord(word, j, needle.length) : word;
+      const actual = normalizeEdges ? edgeWord(original, j, needle.length) : original;
+      return Boolean(expected) && (expected === actual || matchWord(actual, expected));
     });
     if (!match) continue;
     if (offset !== undefined) return null;

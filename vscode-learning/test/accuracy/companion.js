@@ -31,16 +31,16 @@ function activate(context) {
     running = true;
     try {
       const suite = await vscode.window.showQuickPick([
-        { label: "Claim ID and Guided Reading retest", detail: "Five cases from the live audit, up to 13 Copilot requests",
+        { label: "Claim ID and Guided Reading retest", detail: "Five cases from the live audit",
           cases: cases.filter(task => guideGroundingIds.has(task.id)) },
-        { label: "Scope regression retest", detail: "Six cases from the latest live audit, up to 12 Copilot requests",
+        { label: "Scope regression retest", detail: "Six cases from the latest live audit",
           cases: cases.filter(task => restrictionIds.has(task.id)) },
-        { label: "Scope and punctuation retest", detail: "Two cases from the latest live audit, up to four Copilot requests",
+        { label: "Scope and punctuation retest", detail: "Two cases from the latest live audit",
           cases: cases.filter(task => scopeIds.has(task.id)) },
-        { label: "Citation and refusal retest", detail: "Six cases from the live audit, up to 12 Copilot requests",
+        { label: "Citation and refusal retest", detail: "Six cases from the live audit",
           cases: cases.filter(task => groundingIds.has(task.id)) },
-        { label: "Six-case accuracy check", detail: "Up to 12 Copilot requests", cases: cases.filter(task => smokeIds.has(task.id)) },
-        { label: "Full 37-case benchmark", detail: "Up to about 80 Copilot requests", cases }
+        { label: "Six-case accuracy check", detail: "Normally up to 12 Copilot requests", cases: cases.filter(task => smokeIds.has(task.id)) },
+        { label: "Full 37-case benchmark", detail: "Typically about 80 Copilot requests", cases }
       ], { placeHolder: "Choose a PrecisionPDF accuracy suite. Only synthetic PDF evidence is sent." });
       if (!suite) return;
       const filename = path.join(build.reportDirectory, "live-" + randomUUID() + ".json");

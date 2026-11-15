@@ -2,7 +2,7 @@
 
 A local PDF toolkit combining a **PrecisionPDF MCP server** for reviewable PDF annotations with an optional **VS Code Learning Mode** for interactive reading, exact document search, and Copilot-assisted explanations.
 
-> **Current components:** the MCP annotation server and the experimental **PrecisionPDF Learning Mode v0.8.3** VS Code extension in this checkout. Learning Mode has been tested on real PDFs in VS Code. It is **not** a published VS Code Marketplace extension.
+> **Current components:** the MCP annotation server and the experimental **PrecisionPDF Learning Mode v0.8.6** VS Code extension in this checkout. Learning Mode has been tested on real PDFs in VS Code. It is **not** a published VS Code Marketplace extension.
 
 ## Features
 

@@ -23,8 +23,9 @@ code --install-extension /tmp/precisionpdf-accuracy-review/precisionpdf-accuracy
 
 In your signed-in VS Code window, run **PrecisionPDF: Run Accuracy Check** from
 the Command Palette and choose **Six-case accuracy check**. VS Code may ask to
-grant the test companion Copilot access. The six cases use up to 12 requests and
-save a local report in the build output directory. Use **Full 37-case benchmark**
+grant the test companion Copilot access. The six cases normally use up to 12
+requests, with one extra per text tutor case if a reply is unreadable. The
+companion saves a local report in the build output directory. Use **Full 37-case benchmark**
 after reviewing the six-case results.
 
 Choose **Citation and refusal retest** to rerun the six cases that exposed
@@ -52,7 +53,7 @@ before rerunning the check so it uses the new benchmark code.
 
 ## Run in a separate VS Code test profile
 
-Use a separate VS Code profile directory and sign in to Copilot there. Close that instance before running extension tests against the same profile directory. The test process makes live Copilot requests (up to about 80 for the full suite). It sends only the generated fixtures and benchmark questions, and writes a local report after each case.
+Use a separate VS Code profile directory and sign in to Copilot there. Close that instance before running extension tests against the same profile directory. A full run normally uses about 80 Copilot requests. Each text tutor case can make one extra request if Copilot returns an unreadable reply. The test process sends only the generated fixtures and benchmark questions and writes a local report after each case.
 
 From the repository root:
 

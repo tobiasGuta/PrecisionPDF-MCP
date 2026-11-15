@@ -31,7 +31,7 @@ cd vscode-learning
 npm install
 npm test
 npm run package:vsix
-code --install-extension precisionpdf-learning-0.8.3.vsix
+code --install-extension precisionpdf-learning-0.8.6.vsix
 ```
 
 ## Reading a PDF
@@ -48,7 +48,7 @@ code --install-extension precisionpdf-learning-0.8.3.vsix
 
 **Strict Source** is the default in Manual Tutoring and Guided Reading. It uses the supplied evidence for document claims and reports when the available evidence is insufficient. **Contextual Explanation** allows additional background or examples in a separate **Additional model context** section. This section is model-generated and can be wrong.
 
-In Manual Tutoring, choose the context to send and click **Ask with Copilot**. The confirmation covers up to two requests. The first drafts claims and selects their quotes. The reader resolves those quotes to the original PDF words before the second request. The reviewer checks whether those words support each claim and whether the claim directly helps answer your question. If the reviewer identifies a restriction that conflicts with the claim, it must quote the limiting passage. Click a **PDF page** citation to highlight the reviewed words. Citations from OCR are marked, and the tutor indicates when it withheld a claim or sent only part of a long passage. The reader retains citation targets for its latest 50 answers within the session.
+In Manual Tutoring, choose the context to send and click **Ask with Copilot**. Text answers use a draft and a support review, with one extra request if Copilot returns an unreadable reply. The reader resolves the draft’s quotes to the original PDF words before review. The reviewer checks whether those words support each claim and whether the claim directly helps answer your question. If the reviewer identifies a restriction that conflicts with the claim, it must quote the limiting passage. Click a **PDF page** citation to highlight the reviewed words. Citations from OCR are marked, and the tutor indicates when it withheld a claim or sent only part of a long passage. The reader retains citation targets for its latest 50 answers within the session.
 
 For a general question like “Explain this passage,” the tutor focuses on the selection if there is one and otherwise uses the current page. **Pinned passages only** focuses the answer on your pins. Both explanation modes can show a labeled **Hypothetical example** based on verified claims. If the example cannot be supported, the tutor can still show the explanation. When the tutor cannot verify an answer, it keeps your question in the composer so you can refine it.
 
@@ -124,6 +124,7 @@ check before comparing live Copilot answers.
 
 ## Release history
 
+- **v0.8.6** recovers citations affected by misencoded letters in the PDF text layer and retries once when Copilot returns an unreadable tutoring reply.
 - **v0.8.3** adds Strict Source explanations with clickable evidence, cross-PDF comparison, figure and equation explanations, guided audio recaps, and more detailed practice and review.
 - **v0.8.2** adds local figure and table navigation with return-to-position.
 - **v0.8.1** adds offline Read Aloud to Guided Reading explanations.

@@ -9,7 +9,8 @@ function mock(...responses) {
   return { prompts, sendModel: async prompt => {
     prompts.push(prompt);
     assert.ok(responses.length, "unexpected model request");
-    return JSON.stringify(responses.shift());
+    const response = responses.shift();
+    return typeof response === "string" ? response : JSON.stringify(response);
   } };
 }
 
@@ -147,6 +148,36 @@ test("an added period at a quote boundary preserves the exact source words", asy
   assert.equal(review.candidates[0].citations[0].quote, exact);
 });
 
+test("a repaired in-word PDF glyph locates the original quote for support review", async () => {
+  const quote = "A noti\uE03Ecation signals that the order is ready.";
+  const model = mock({ claims: [{
+    text: "There is a signal when the order is ready.", sources: ["s1"],
+    anchors: [{ sourceId: "s1", quote: "A notification signals that the order is ready." }]
+  }] }, { reviews: [supported(1)] });
+  const answer = await groundedAnswer({ question: "When is there a signal?",
+    sources: [{ id: "s1", page: 2, start_word: 4, end_word: 11, quote }], ...model });
+  assert.equal(answer.claims[0].sources[0].quote, quote);
+  assert.equal(answer.claims[0].sources[0].start_word, 4);
+  assert.equal(JSON.parse(model.prompts[1].split("\n").at(-1)).candidates[0].citations[0].quote, quote);
+});
+
+test("glyph recovery rejects ambiguous ranges and leaves encoded numbers alone", async () => {
+  for (const [quote, proposed] of [
+    ["The noti\uE03Ecation arrived. The noti\uE000cation arrived.", "The notification arrived."],
+    ["The temperature was \uE03E2 degrees.", "The temperature was -2 degrees."]
+  ]) {
+    const model = mock({ claims: [{
+      text: "A claim.", sources: ["s1"], anchors: [{ sourceId: "s1", quote: proposed }]
+    }] });
+    const answer = await groundedAnswer({
+      sources: [{ id: "s1", page: 1, start_word: 0, end_word: quote.split(" ").length - 1, quote }],
+      ...model
+    });
+    assert.equal(answer.notice, UNVERIFIED);
+    assert.equal(model.prompts.length, 1);
+  }
+});
+
 test("quote matching keeps signs, units and internal punctuation and rejects ambiguous relaxed matches", async () => {
   const quote = "The sample changed by -2.5 mg. The value held. The value held, then fell.";
   const sources = [{ id: "s1", page: 1, start_word: 0, end_word: 13, quote }];
@@ -277,7 +308,44 @@ test("contextual mode separates additional knowledge and sends document instruct
   assert.deepEqual(JSON.parse(model.prompts[0].split("\n").at(-1)), [{ id: source.id, page: source.page, quote: source.quote }]);
 });
 
-test("malformed support results fail closed", async () => {
-  const model = mock({ claims: [{ text: "A claim.", sources: ["s1"] }] }, { reviews: "yes" });
+test("accepted contextual material does not hide a citation verification failure", async () => {
+  const model = mock({
+    claims: [{ text: "The eastern plot yielded less grain.", sources: ["s1"],
+      anchors: [{ sourceId: "s1", quote: "The plot produced less wheat." }] }],
+    context: "Growing conditions can affect yields."
+  }, { reviews: [], contextAccepted: true });
+  const answer = await groundedAnswer({ question: "How might this result relate to my garden?",
+    mode: "contextual", sources, ...model });
+  assert.equal(answer.claims.length, 0);
+  assert.equal(answer.notice, UNVERIFIED);
+  assert.match(answer.text, /Additional model context/);
+});
+
+test("one fenced tutor reply with surrounding prose still goes through support review", async () => {
+  const model = mock('Draft:\n```json\n{"claims":[{"text":"The eastern plot yielded less grain.","sources":["s1"]}]}\n```\nEnd.',
+    { reviews: [supported(1)] });
+  const answer = await groundedAnswer({ sources, ...model });
+  assert.equal(answer.claims.length, 1);
+  assert.equal(model.prompts.length, 2);
+});
+
+test("an unreadable tutor draft or review gets one format retry", async () => {
+  const draft = { claims: [{ text: "The eastern plot yielded less grain.", sources: ["s1"] }] };
+  const review = { reviews: [supported(1)] };
+  for (const [responses, retryAt] of [
+    [["{", draft, review], 1],
+    [[draft, { reviews: "yes" }, review], 2]
+  ]) {
+    const model = mock(...responses);
+    const answer = await groundedAnswer({ sources, ...model });
+    assert.equal(answer.claims.length, 1);
+    assert.equal(model.prompts.length, 3);
+    assert.match(model.prompts[retryAt], /^Your previous reply could not be read/);
+  }
+});
+
+test("a malformed draft and review share the retry limit and fail closed", async () => {
+  const model = mock('Unstructured answer.', { claims: [{ text: "A claim.", sources: ["s1"] }] }, { reviews: "yes" });
   await assert.rejects(groundedAnswer({ prompt: "Explain.", sources, ...model }), /invalid support/);
+  assert.equal(model.prompts.length, 3);
 });
